@@ -15,13 +15,25 @@ import NotificationsPage from './pages/Notifications';
 
 type Page = 'home' | 'categories' | 'favorites' | 'downloads' | 'settings' | 'profile' | 'book-details' | 'author-details' | 'notifications';
 
-export default function App() {
+type AuthenticatedUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: 'user' | 'author' | 'admin';
+};
+
+type AppProps = {
+  authUser: AuthenticatedUser;
+  onLogout: () => void;
+};
+
+export default function App({ authUser, onLogout }: AppProps) {
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [isLightMode, setIsLightMode] = useState(false);
   const [user, setUser] = useState({
-    name: 'Alex Johnson',
+    name: authUser?.name || 'Library User',
     photo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
     membership: 'Premium Member'
   });
@@ -33,6 +45,13 @@ export default function App() {
       document.documentElement.classList.remove('light');
     }
   }, [isLightMode]);
+
+  React.useEffect(() => {
+    setUser((prev) => ({
+      ...prev,
+      name: authUser?.name || prev.name,
+    }));
+  }, [authUser?.name]);
 
   const notifications = [
     { id: 1, type: 'new', title: 'New Arrival', message: 'Sea of Tranquility is now available!', time: '2m ago', unread: true, icon: <Icons.Book className="size-4" /> },
@@ -127,6 +146,12 @@ export default function App() {
                 style={{ backgroundImage: `url('${user.photo}')` }}
                 onClick={() => navigateTo('profile')}
               />
+              <button
+                onClick={onLogout}
+                className="hidden sm:block rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>

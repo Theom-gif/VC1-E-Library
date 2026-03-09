@@ -1,4 +1,5 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/+$/, '');
 
 const buildUrl = (path) => {
   if (!path) return API_BASE_URL || '';
@@ -53,4 +54,5 @@ const apiClient = {
   delete: (path, options) => request('DELETE', path, undefined, options),
 };
 
+export {API_BASE_URL};
 export default apiClient;
