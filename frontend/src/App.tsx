@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Icons, MOCK_BOOKS, BookType } from './types';
+import { Icons, MOCK_BOOKS, BookType, hydrateBooksFromApi } from './types';
 
 // Page Components
 import Home from './pages/Home';
@@ -12,14 +12,16 @@ import Profile from './pages/Profile';
 import BookDetails from './pages/BookDetails';
 import AuthorDetails from './pages/AuthorDetails';
 import NotificationsPage from './pages/Notifications';
+import Logout from './pages/Logout';
 
-type Page = 'home' | 'categories' | 'favorites' | 'downloads' | 'settings' | 'profile' | 'book-details' | 'author-details' | 'notifications';
+type Page = 'home' | 'categories' | 'favorites' | 'downloads' | 'settings' | 'profile' | 'book-details' | 'author-details' | 'notifications' | 'logout';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [isLightMode, setIsLightMode] = useState(false);
+  const [, setBooksSyncVersion] = useState(0);
   const [user, setUser] = useState({
     name: 'Alex Johnson',
     photo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
@@ -33,6 +35,23 @@ export default function App() {
       document.documentElement.classList.remove('light');
     }
   }, [isLightMode]);
+  React.useEffect(() => {
+    let isMounted = true;
+
+    hydrateBooksFromApi()
+      .then((count) => {
+        if (isMounted && count > 0) {
+          setBooksSyncVersion((value) => value + 1);
+        }
+      })
+      .catch(() => {
+        // Keep static mock data when backend is unavailable.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const notifications = [
     { id: 1, type: 'new', title: 'New Arrival', message: 'Sea of Tranquility is now available!', time: '2m ago', unread: true, icon: <Icons.Book className="size-4" /> },
@@ -48,6 +67,18 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('user');
+      sessionStorage.clear();
+    } catch {
+      // Ignore storage errors (e.g., private mode).
+    }
+    setCurrentPage('home');
+    window.scrollTo(0, 0);
+  };
+
   const renderPage = () => {
     switch (currentPage) {
       case 'home': return <Home onNavigate={navigateTo} />;
@@ -59,6 +90,7 @@ export default function App() {
       case 'book-details': return <BookDetails book={selectedBook || MOCK_BOOKS[0]} onNavigate={navigateTo} />;
       case 'author-details': return <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
       case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
+      case 'logout': return <Logout onLogout={handleLogout} onNavigate={navigateTo} />;
       default: return <Home onNavigate={navigateTo} />;
     }
   };

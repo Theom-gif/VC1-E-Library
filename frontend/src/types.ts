@@ -236,3 +236,125 @@ export const NEW_ARRIVALS: BookType[] = [
     rating: 4.9
   }
 ];
+const STATIC_MOCK_BOOKS: BookType[] = [...MOCK_BOOKS];
+const STATIC_NEW_ARRIVALS: BookType[] = [...NEW_ARRIVALS];
+
+type ApiBookPayload = {
+  id?: string | number;
+  title?: string;
+  author?: string;
+  author_name?: string;
+  category?: string;
+  category_name?: string;
+  cover?: string;
+  cover_url?: string;
+  cover_image_url?: string;
+  coverImageUrl?: string;
+  cover_image_path?: string;
+  description?: string;
+  average_rating?: number;
+};
+
+const resolveApiBaseUrl = (): string => {
+  const envBase = ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) || '';
+  const trimmed = envBase.trim().replace(/\/$/, '');
+  return trimmed || 'http://127.0.0.1:8000';
+};
+
+const asAbsoluteUrl = (value: string | undefined | null): string => {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  if (/^(https?:|data:)/i.test(raw)) return raw;
+
+  const base = resolveApiBaseUrl();
+  if (raw.startsWith('storage/')) {
+    return `${base}/${raw}`;
+  }
+
+  return `${base}/storage/${raw.replace(/^\/+/, '')}`;
+};
+
+const normalizeApiBook = (book: ApiBookPayload, index: number): BookType | null => {
+  const title = (book?.title || '').trim();
+  if (!title) return null;
+
+  const author = (book?.author_name || book?.author || 'Unknown Author').trim();
+  const category = (book?.category_name || book?.category || 'General').trim();
+  const cover =
+    asAbsoluteUrl(book?.cover_image_url) ||
+    asAbsoluteUrl(book?.coverImageUrl) ||
+    asAbsoluteUrl(book?.cover_url) ||
+    asAbsoluteUrl(book?.cover) ||
+    asAbsoluteUrl(book?.cover_image_path) ||
+    'https://picsum.photos/seed/library-cover/400/600';
+
+  const idValue = book?.id ?? `book-${index + 1}`;
+
+  return {
+    id: `api-${String(idValue)}`,
+    title,
+    author,
+    cover,
+    category,
+    rating: Number(book?.average_rating) > 0 ? Number(book?.average_rating) : 4.5,
+    description: book?.description || undefined,
+  };
+};
+
+export async function hydrateBooksFromApi(): Promise<number> {
+  const base = resolveApiBaseUrl();
+  const endpoints = [`${base}/api/auth/books`, `${base}/api/books`];
+
+  let payload: any = null;
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { method: 'GET' });
+      if (!response.ok) continue;
+      payload = await response.json();
+      if (payload) break;
+    } catch {
+      // Try fallback endpoint
+    }
+  }
+
+  const source: ApiBookPayload[] =
+    (Array.isArray(payload?.data) && payload.data) ||
+    (Array.isArray(payload?.books) && payload.books) ||
+    (Array.isArray(payload?.results) && payload.results) ||
+    [];
+
+  if (!source.length) {
+    return 0;
+  }
+
+  const remoteBooks = source
+    .map((book, index) => normalizeApiBook(book, index))
+    .filter((book): book is BookType => Boolean(book));
+
+  if (!remoteBooks.length) {
+    return 0;
+  }
+
+  const seen = new Set<string>();
+  const merged: BookType[] = [];
+  for (const book of [...remoteBooks, ...STATIC_MOCK_BOOKS]) {
+    const key = `${book.title.toLowerCase()}::${book.author.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(book);
+  }
+
+  MOCK_BOOKS.splice(0, MOCK_BOOKS.length, ...merged);
+
+  const arrivals: BookType[] = [
+    ...remoteBooks.slice(0, 5),
+    ...STATIC_NEW_ARRIVALS,
+  ].filter((book, index, arr) => {
+    const key = `${book.title.toLowerCase()}::${book.author.toLowerCase()}`;
+    return arr.findIndex((item) => `${item.title.toLowerCase()}::${item.author.toLowerCase()}` === key) === index;
+  }).slice(0, 8);
+
+  NEW_ARRIVALS.splice(0, NEW_ARRIVALS.length, ...arrivals);
+
+  return remoteBooks.length;
+}
