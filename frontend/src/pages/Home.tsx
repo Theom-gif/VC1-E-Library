@@ -1,13 +1,32 @@
-import React from 'react';
-import { Icons, MOCK_BOOKS, NEW_ARRIVALS, BookType } from '../types';
-import { motion } from 'motion/react';
+﻿import React from 'react';
+import { Icons, BookType } from '../types';
 import BookCard from '../components/BookCard';
 
 interface HomeProps {
   onNavigate: (page: any, data?: any) => void;
+  books: BookType[];
+  onToggleFavorite: (bookId: string) => void;
 }
 
-export default function Home({ onNavigate }: HomeProps) {
+export default function Home({ onNavigate, books, onToggleFavorite }: HomeProps) {
+  if (!books.length) {
+    return (
+      <div className="mx-auto max-w-7xl px-6 lg:px-20 py-16">
+        <div className="rounded-3xl border border-border bg-surface p-10 text-center">
+          <h2 className="text-2xl font-bold text-text">No books available</h2>
+          <p className="mt-2 text-sm text-text-muted">There are no approved books in the database yet.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const recentBooks = books.slice(0, 3);
+  const newArrivals = books.slice(0, 5);
+  const trendingBooks = books.slice(3, 5).length ? books.slice(3, 5) : books.slice(0, 2);
+  const topRatedBooks = [...books]
+    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+    .slice(0, 4);
+
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-16">
       {/* Hero Section */}
@@ -52,7 +71,7 @@ export default function Home({ onNavigate }: HomeProps) {
           <button className="text-sm font-bold text-primary hover:underline">View All</button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {MOCK_BOOKS.slice(0, 3).map((book) => (
+          {recentBooks.map((book) => (
             <div 
               key={book.id}
               onClick={() => onNavigate('book-details', book)}
@@ -67,12 +86,12 @@ export default function Home({ onNavigate }: HomeProps) {
                 <div className="space-y-2">
                   <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
                     <span className="text-text-muted">Progress</span>
-                    <span className="text-primary">{book.progress}%</span>
+                    <span className="text-primary">{book.progress ?? 0}%</span>
                   </div>
                   <div className="h-1.5 w-full bg-surface rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${book.progress}%` }} />
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${book.progress ?? 0}%` }} />
                   </div>
-                  <p className="text-[10px] text-text-muted italic">{book.timeLeft}</p>
+                  <p className="text-[10px] text-text-muted italic">{book.timeLeft || 'New'}</p>
                 </div>
               </div>
             </div>
@@ -99,12 +118,13 @@ export default function Home({ onNavigate }: HomeProps) {
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-          {NEW_ARRIVALS.map((book) => (
+          {newArrivals.map((book) => (
             <BookCard 
               key={book.id} 
               book={book} 
               onClick={() => onNavigate('book-details', book)} 
               onAuthorClick={(author) => onNavigate('author-details', author)}
+              onToggleFavorite={onToggleFavorite}
             />
           ))}
         </div>
@@ -123,7 +143,7 @@ export default function Home({ onNavigate }: HomeProps) {
             <button className="text-sm font-bold text-primary hover:underline">Explore</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {MOCK_BOOKS.slice(3, 5).map((book) => (
+            {trendingBooks.map((book) => (
               <div 
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
@@ -148,7 +168,7 @@ export default function Home({ onNavigate }: HomeProps) {
             <h3 className="text-xl font-bold">Top Rated</h3>
           </div>
           <div className="space-y-4">
-            {MOCK_BOOKS.slice(0, 4).map((book, i) => (
+            {topRatedBooks.map((book, i) => (
               <div 
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}

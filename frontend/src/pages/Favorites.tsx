@@ -1,42 +1,45 @@
 import React, { useState, useMemo } from 'react';
-import { Icons, MOCK_BOOKS, BookType } from '../types';
+import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
 
 interface FavoritesProps {
   onNavigate: (page: any, data?: any) => void;
+  books: BookType[];
+  onToggleFavorite: (bookId: string) => void;
 }
 
 type TabType = 'All Favorites' | 'Recently Added' | 'Reading Progress' | 'Completed';
 
-export default function Favorites({ onNavigate }: FavoritesProps) {
+export default function Favorites({ onNavigate, books, onToggleFavorite }: FavoritesProps) {
   const [activeTab, setActiveTab] = useState<TabType>('All Favorites');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredBooks = useMemo(() => {
-    let books = MOCK_BOOKS;
+    const favoriteBooks = books.filter((book) => book.isFavorite);
+    let scopedBooks = favoriteBooks;
 
     // Filter by tab
     if (activeTab === 'Recently Added') {
       // Just showing all for now as we don't have "added date"
-      books = MOCK_BOOKS;
+      scopedBooks = favoriteBooks;
     } else if (activeTab === 'Reading Progress') {
-      books = MOCK_BOOKS.filter(b => (b.progress && b.progress > 0 && b.progress < 100) || b.status === 'Currently Reading');
+      scopedBooks = favoriteBooks.filter(b => (b.progress && b.progress > 0 && b.progress < 100) || b.status === 'Currently Reading');
     } else if (activeTab === 'Completed') {
-      books = MOCK_BOOKS.filter(b => b.status === 'Completed' || b.progress === 100);
+      scopedBooks = favoriteBooks.filter(b => b.status === 'Completed' || b.progress === 100);
     }
 
     // Filter by search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      books = books.filter(b => 
+      scopedBooks = scopedBooks.filter(b => 
         b.title.toLowerCase().includes(query) || 
         b.author.toLowerCase().includes(query)
       );
     }
 
-    return books;
-  }, [activeTab, searchQuery]);
+    return scopedBooks;
+  }, [activeTab, searchQuery, books]);
 
   const tabs: TabType[] = ['All Favorites', 'Recently Added', 'Reading Progress', 'Completed'];
 
@@ -79,15 +82,16 @@ export default function Favorites({ onNavigate }: FavoritesProps) {
 
       {filteredBooks.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8">
-          {filteredBooks.map((book) => (
-            <BookCard 
-              key={book.id} 
-              book={book} 
-              onClick={() => onNavigate('book-details', book)} 
-              onAuthorClick={(author) => onNavigate('author-details', author)}
-            />
-          ))}
-        </div>
+        {filteredBooks.map((book) => (
+          <BookCard 
+            key={book.id} 
+            book={book} 
+            onClick={() => onNavigate('book-details', book)} 
+            onAuthorClick={(author) => onNavigate('author-details', author)}
+            onToggleFavorite={onToggleFavorite}
+          />
+        ))}
+      </div>
       ) : (
         <div className="py-20 flex flex-col items-center text-center space-y-4">
           <div className="size-20 rounded-full bg-surface flex items-center justify-center text-text-muted/20">

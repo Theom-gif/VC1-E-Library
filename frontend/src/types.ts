@@ -94,9 +94,11 @@ export interface BookType {
   id: string;
   title: string;
   author: string;
+  uploaderName?: string;
   cover: string;
   category: string;
   rating: number;
+  isFavorite?: boolean;
   progress?: number;
   pages?: number;
   description?: string;

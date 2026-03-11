@@ -1,16 +1,26 @@
 import apiClient from './apiClient';
 
 const extractToken = (data) =>
-  data?.token || data?.access_token || data?.data?.token || data?.data?.access_token;
+  data?.token ||
+  data?.access_token ||
+  data?.accessToken ||
+  data?.data?.token ||
+  data?.data?.access_token ||
+  data?.data?.accessToken ||
+  data?.data?.data?.token ||
+  data?.data?.data?.access_token ||
+  data?.data?.data?.accessToken;
 
 const storeToken = (token) => {
   if (token) {
     localStorage.setItem('token', token);
+    localStorage.setItem('access_token', token);
   }
 };
 
 const clearToken = () => {
   localStorage.removeItem('token');
+  localStorage.removeItem('access_token');
 };
 
 export const authService = {

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Icons, MOCK_BOOKS } from '../types';
+import { Icons, BookType } from '../types';
 import BookCard from '../components/BookCard';
 
 interface CategoriesProps {
   onNavigate: (page: any, data?: any) => void;
+  books: BookType[];
+  onToggleFavorite: (bookId: string) => void;
 }
 
 const CATEGORIES = [
@@ -21,12 +23,13 @@ const CATEGORIES = [
 
 const BOOKS_PER_PAGE = 8;
 
-export default function Categories({ onNavigate }: CategoriesProps) {
+export default function Categories({ onNavigate, books, onToggleFavorite }: CategoriesProps) {
   const [activeCategory, setActiveCategory] = useState('All Genres');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const sourceBooks = books;
 
-  const filteredBooks = MOCK_BOOKS.filter(book => {
+  const filteredBooks = sourceBooks.filter(book => {
     // Category Filter
     const matchesCategory = activeCategory === 'All Genres' || 
       (activeCategory === 'Sci-Fi & Fantasy' && (book.category === 'Sci-Fi' || book.category === 'Fantasy')) ||
@@ -41,7 +44,7 @@ export default function Categories({ onNavigate }: CategoriesProps) {
   });
 
   // Pagination logic
-  const totalPages = Math.ceil(filteredBooks.length / BOOKS_PER_PAGE);
+  const totalPages = Math.ceil(filteredBooks.length / BOOKS_PER_PAGE) || 1;
   const startIndex = (currentPage - 1) * BOOKS_PER_PAGE;
   const paginatedBooks = filteredBooks.slice(startIndex, startIndex + BOOKS_PER_PAGE);
 
@@ -100,7 +103,9 @@ export default function Categories({ onNavigate }: CategoriesProps) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-text">{activeCategory}</h2>
-            <p className="text-sm text-text-muted">Showing {startIndex + 1}-{Math.min(startIndex + BOOKS_PER_PAGE, filteredBooks.length)} of {filteredBooks.length} books</p>
+            <p className="text-sm text-text-muted">
+              Showing {filteredBooks.length ? startIndex + 1 : 0}-{Math.min(startIndex + BOOKS_PER_PAGE, filteredBooks.length)} of {filteredBooks.length} books
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -124,6 +129,7 @@ export default function Categories({ onNavigate }: CategoriesProps) {
                 book={book} 
                 onClick={() => onNavigate('book-details', book)} 
                 onAuthorClick={(author) => onNavigate('author-details', author)}
+                onToggleFavorite={onToggleFavorite}
               />
             ))}
           </div>

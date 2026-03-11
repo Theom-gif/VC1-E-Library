@@ -6,10 +6,11 @@ interface BookCardProps {
   book: BookType;
   onClick: () => void;
   onAuthorClick?: (author: string) => void;
+  onToggleFavorite?: (bookId: string) => void;
   key?: any;
 }
 
-export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps) {
+export default function BookCard({ book, onClick, onAuthorClick, onToggleFavorite }: BookCardProps) {
   return (
     <motion.div 
       whileHover={{ y: -5 }}
@@ -33,10 +34,10 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
             className="p-2 rounded-full bg-white text-background-dark shadow-lg hover:scale-110 transition-transform"
             onClick={(e) => {
               e.stopPropagation();
-              // In a real app, this would toggle favorite
+              onToggleFavorite?.(book.id);
             }}
           >
-            <Icons.Heart className="size-4" />
+            <Icons.Heart className={`size-4 ${book.isFavorite ? 'fill-primary text-primary' : ''}`} />
           </button>
         </div>
       </div>
@@ -52,6 +53,9 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
           }}
         >
           {book.author}
+        </p>
+        <p className="text-[10px] text-text-muted/80 line-clamp-1">
+          Uploaded by {book.uploaderName || book.author}
         </p>
       </div>
     </motion.div>

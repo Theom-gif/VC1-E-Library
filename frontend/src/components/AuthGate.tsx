@@ -16,7 +16,7 @@ type AuthGateProps = {
 };
 
 const SESSION_KEY = 'elibrary_session';
-const AUTO_LOGIN_BYPASS = true;
+const AUTO_LOGIN_BYPASS = false;
 const REGISTER_ROLES: Array<{label: string; role: RoleName; icon: typeof UserIcon}> = [
   {label: 'USER', role: 'user', icon: UserIcon},
   {label: 'AUTHOR', role: 'author', icon: PenTool},
@@ -268,7 +268,7 @@ export default function AuthGate({children}: AuthGateProps) {
     return (
       <main className="min-h-screen bg-[#122024] flex flex-col items-center justify-center p-4 text-[#f8fafc]">
         <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
-          <div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4a868f]"><BookOpen size={18} className="text-[#f8fafc]" /></div><span className="text-xl font-bold tracking-tight">E-Library</span></div>
+          <div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4a868f]"><BookOpen size={18} className="text-[#f8fafc]" /></div><span className="text-xl font-bold tracking-tight">គម្ពី-Elibrary</span></div>
           <button className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#1d3438] px-4 py-1.5 text-xs font-semibold text-[#94a3b8] hover:text-[#f8fafc]">Support</button>
         </header>
         <div className="mx-auto w-full max-w-[550px] rounded-[24px] border border-[rgba(255,255,255,0.08)] bg-[#16282b] p-8 shadow-2xl lg:p-10">
@@ -307,7 +307,7 @@ export default function AuthGate({children}: AuthGateProps) {
   return (
     <main className="min-h-screen bg-[#122024] flex flex-col items-center justify-center p-4 text-[#f8fafc]">
       <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
-        <div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4a868f]"><BookOpen size={18} className="text-[#f8fafc]" /></div><span className="text-xl font-bold tracking-tight">E-Library</span></div>
+        <div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4a868f]"><BookOpen size={18} className="text-[#f8fafc]" /></div><span className="text-xl font-bold tracking-tight">គម្ពី-Elibrary</span></div>
         <button className="text-sm font-medium text-[#94a3b8] hover:text-[#f8fafc]">Help Center</button>
       </header>
       <div className="flex w-full max-w-[900px] overflow-hidden rounded-3xl border border-[rgba(255,255,255,0.08)] bg-[#16282b] shadow-2xl">

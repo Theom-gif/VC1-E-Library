@@ -1,14 +1,16 @@
 import React from 'react';
-import { Icons, MOCK_BOOKS, BookType } from '../types';
+import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 
 interface ProfileProps {
   user: { name: string, photo: string, membership: string };
   onUpdateUser: (user: any) => void;
   onNavigate: (page: any, data?: any) => void;
+  books: BookType[];
+  onToggleFavorite: (bookId: string) => void;
 }
 
-export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps) {
+export default function Profile({ user, onUpdateUser, onNavigate, books }: ProfileProps) {
   const [isEditing, setIsEditing] = React.useState(false);
   const [editName, setEditName] = React.useState(user.name);
   const [editPhoto, setEditPhoto] = React.useState(user.photo);
@@ -145,30 +147,36 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
           <section className="space-y-6">
             <h3 className="text-xl font-bold text-text">Currently Reading</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {MOCK_BOOKS.slice(0, 2).map((book) => (
-                <div 
-                  key={book.id}
-                  onClick={() => onNavigate('book-details', book)}
-                  className="p-4 rounded-2xl bg-surface border border-border flex gap-4 cursor-pointer group hover:border-primary/30 transition-all"
-                >
-                  <img src={book.cover} alt={book.title} className="w-20 h-28 object-cover rounded-lg shadow-lg" />
-                  <div className="flex-1 flex flex-col justify-between py-1">
-                    <div>
-                      <h4 className="font-bold text-sm text-text group-hover:text-primary transition-colors line-clamp-1">{book.title}</h4>
-                      <p className="text-[10px] text-text-muted">{book.author}</p>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-[10px] font-bold">
-                        <span className="text-text-muted">Progress</span>
-                        <span className="text-primary">{book.progress}%</span>
+              {books.length ? (
+                books.slice(0, 2).map((book) => (
+                  <div 
+                    key={book.id}
+                    onClick={() => onNavigate('book-details', book)}
+                    className="p-4 rounded-2xl bg-surface border border-border flex gap-4 cursor-pointer group hover:border-primary/30 transition-all"
+                  >
+                    <img src={book.cover} alt={book.title} className="w-20 h-28 object-cover rounded-lg shadow-lg" />
+                    <div className="flex-1 flex flex-col justify-between py-1">
+                      <div>
+                        <h4 className="font-bold text-sm text-text group-hover:text-primary transition-colors line-clamp-1">{book.title}</h4>
+                        <p className="text-[10px] text-text-muted">{book.author}</p>
                       </div>
-                      <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: `${book.progress}%` }} />
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] font-bold">
+                          <span className="text-text-muted">Progress</span>
+                          <span className="text-primary">{book.progress ?? 0}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
+                          <div className="h-full bg-primary" style={{ width: `${book.progress ?? 0}%` }} />
+                        </div>
                       </div>
                     </div>
                   </div>
+                ))
+              ) : (
+                <div className="col-span-full rounded-2xl border border-border bg-surface p-6 text-sm text-text-muted">
+                  No books available.
                 </div>
-              ))}
+              )}
             </div>
           </section>
         </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Icons, MOCK_BOOKS, BookType } from './types';
+import { Icons, BookType } from './types';
 
 // Page Components
 import Home from './pages/Home';
@@ -10,6 +10,7 @@ import Downloads from './pages/Downloads';
 import Settings from './pages/Settings';
 import Profile from './pages/Profile';
 import BookDetails from './pages/BookDetails';
+import { fetchPublishedBooks } from './service/bookService';
 import AuthorDetails from './pages/AuthorDetails';
 import NotificationsPage from './pages/Notifications';
 
@@ -29,8 +30,9 @@ type AppProps = {
 
 export default function App({ authUser, onLogout }: AppProps) {
   const [currentPage, setCurrentPage] = useState<Page>('home');
-  const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
+  const [books, setBooks] = useState<BookType[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [isLightMode, setIsLightMode] = useState(false);
   const [user, setUser] = useState({
     name: authUser?.name || 'Library User',
@@ -53,6 +55,38 @@ export default function App({ authUser, onLogout }: AppProps) {
     }));
   }, [authUser?.name]);
 
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const dbBooks = await fetchPublishedBooks();
+        if (active) {
+          const favoriteIds = new Set<string>(
+            JSON.parse(localStorage.getItem('favorite_books') || '[]'),
+          );
+          setBooks(dbBooks.map((book) => ({ ...book, isFavorite: favoriteIds.has(book.id) })));
+        }
+      } catch {
+        if (active) setBooks([]);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggleFavorite = (bookId: string) => {
+    setBooks((current) => {
+      const next = current.map((book) =>
+        book.id === bookId ? { ...book, isFavorite: !book.isFavorite } : book,
+      );
+      const favoriteIds = next.filter((book) => book.isFavorite).map((book) => book.id);
+      localStorage.setItem('favorite_books', JSON.stringify(favoriteIds));
+      return next;
+    });
+  };
+
   const notifications = [
     { id: 1, type: 'new', title: 'New Arrival', message: 'Sea of Tranquility is now available!', time: '2m ago', unread: true, icon: <Icons.Book className="size-4" /> },
     { id: 2, type: 'download', title: 'Download Complete', message: 'The Great Gatsby has been downloaded.', time: '1h ago', unread: false, icon: <Icons.Download className="size-4" /> },
@@ -61,24 +95,30 @@ export default function App({ authUser, onLogout }: AppProps) {
   ];
 
   const navigateTo = (page: Page, data?: any) => {
-    if (page === 'book-details' && data) setSelectedBook(data);
+    if (page === 'book-details' && data) setSelectedBookId(data.id);
     if (page === 'author-details' && data) setSelectedAuthor(data);
     setCurrentPage(page);
     window.scrollTo(0, 0);
   };
 
+  const selectedBook = books.find((b) => b.id === selectedBookId);
+
   const renderPage = () => {
     switch (currentPage) {
-      case 'home': return <Home onNavigate={navigateTo} />;
-      case 'categories': return <Categories onNavigate={navigateTo} />;
-      case 'favorites': return <Favorites onNavigate={navigateTo} />;
-      case 'downloads': return <Downloads onNavigate={navigateTo} />;
+      case 'home': return <Home onNavigate={navigateTo} books={books} onToggleFavorite={toggleFavorite} />;
+      case 'categories': return <Categories onNavigate={navigateTo} books={books} onToggleFavorite={toggleFavorite} />;
+      case 'favorites': return <Favorites onNavigate={navigateTo} books={books} onToggleFavorite={toggleFavorite} />;
+      case 'downloads': return <Downloads onNavigate={navigateTo} books={books} onToggleFavorite={toggleFavorite} />;
       case 'settings': return <Settings />;
-      case 'profile': return <Profile user={user} onUpdateUser={setUser} onNavigate={navigateTo} />;
-      case 'book-details': return <BookDetails book={selectedBook || MOCK_BOOKS[0]} onNavigate={navigateTo} />;
-      case 'author-details': return <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
+      case 'profile': return <Profile user={user} onUpdateUser={setUser} onNavigate={navigateTo} books={books} onToggleFavorite={toggleFavorite} />;
+      case 'book-details':
+        return <BookDetails book={selectedBook} onNavigate={navigateTo} onToggleFavorite={toggleFavorite} />;
+      case 'author-details':
+        return (
+          <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} books={books} onToggleFavorite={toggleFavorite} />
+        );
       case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
-      default: return <Home onNavigate={navigateTo} />;
+      default: return <Home onNavigate={navigateTo} books={books} onToggleFavorite={toggleFavorite} />;
     }
   };
 
@@ -93,7 +133,7 @@ export default function App({ authUser, onLogout }: AppProps) {
               onClick={() => navigateTo('home')}
             >
               <Icons.BookOpen className="size-8" />
-              <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">គម្ពី-E-Library</h2>
+              <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">គម្ពី-Elibrary</h2>
             </div>
             <nav className="hidden lg:flex items-center gap-6">
               <NavLink active={currentPage === 'home'} onClick={() => navigateTo('home')}>Home</NavLink>
@@ -178,7 +218,7 @@ export default function App({ authUser, onLogout }: AppProps) {
           <div className="col-span-1 md:col-span-1">
             <div className="text-primary flex items-center gap-2 mb-4">
               <Icons.BookOpen className="size-6" />
-              <h2 className="text-lg font-bold">គម្ពី-E-Library</h2>
+              <h2 className="text-lg font-bold">គម្ពី-Elibrary</h2>
             </div>
             <p className="text-sm text-text-muted leading-relaxed">
               Making knowledge accessible to everyone, anywhere in the world. Access thousands of premium titles at your fingertips.
@@ -218,7 +258,7 @@ export default function App({ authUser, onLogout }: AppProps) {
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-6 lg:px-20 pt-8 mt-8 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-text-muted">© 2024 គម្ពី-E-Library Inc. All rights reserved.</p>
+          <p className="text-xs text-text-muted">© 2024 គម្ពី-Elibrary Inc. All rights reserved.</p>
           <div className="flex gap-6">
             <Icons.Globe className="size-5 text-text-muted hover:text-primary cursor-pointer transition-colors" />
             <Icons.User className="size-5 text-text-muted hover:text-primary cursor-pointer transition-colors" />

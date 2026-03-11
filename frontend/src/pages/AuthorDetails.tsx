@@ -1,17 +1,17 @@
 import React from 'react';
-import { Icons, MOCK_BOOKS, NEW_ARRIVALS, BookType } from '../types';
+import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
 
 interface AuthorDetailsProps {
   authorName: string;
   onNavigate: (page: any, data?: any) => void;
+  books: BookType[];
+  onToggleFavorite: (bookId: string) => void;
 }
 
-export default function AuthorDetails({ authorName, onNavigate }: AuthorDetailsProps) {
-  // Combine all books and filter by author
-  const allBooks = [...MOCK_BOOKS, ...NEW_ARRIVALS];
-  const authorBooks = allBooks.filter(book => book.author === authorName);
+export default function AuthorDetails({ authorName, onNavigate, books, onToggleFavorite }: AuthorDetailsProps) {
+  const authorBooks = books.filter((book) => book.author === authorName);
   
   // Mock author data
   const authorData = {
@@ -112,6 +112,7 @@ export default function AuthorDetails({ authorName, onNavigate }: AuthorDetailsP
                 book={book} 
                 onClick={() => onNavigate('book-details', book)} 
                 onAuthorClick={(author) => onNavigate('author-details', author)}
+                onToggleFavorite={onToggleFavorite}
               />
             ))}
           </div>
