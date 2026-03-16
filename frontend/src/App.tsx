@@ -1,15 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-<<<<<<< HEAD
-<<<<<<< HEAD
-import { Icons, MOCK_BOOKS, BookType, hydrateBooksFromApi } from './types';
-=======
-import { Icons, MOCK_BOOKS, NEW_ARRIVALS, BookType } from './types';
->>>>>>> a0e483341df46cb2cde8dfb4311f065f52a2bece
-=======
-import { Icons, BookType } from './types';
+import { Icons, BookType, hydrateBooksFromApi } from './types';
 import {useLibrary} from './context/LibraryContext';
->>>>>>> 9be4c366780bfd787bcdb47b3328fa905ef9a183
 
 // Page Components
 import Home from './pages/Home';
@@ -21,11 +13,7 @@ import Profile from './pages/Profile';
 import BookDetails from './pages/BookDetails';
 import AuthorDetails from './pages/AuthorDetails';
 import NotificationsPage from './pages/Notifications';
-<<<<<<< HEAD
 import Logout from './pages/Logout';
-
-type Page = 'home' | 'categories' | 'favorites' | 'downloads' | 'settings' | 'profile' | 'book-details' | 'author-details' | 'notifications' | 'logout';
-=======
 import SearchPage from './pages/Search';
 
 type Page =
@@ -38,8 +26,8 @@ type Page =
   | 'search'
   | 'book-details'
   | 'author-details'
-  | 'notifications';
->>>>>>> a0e483341df46cb2cde8dfb4311f065f52a2bece
+  | 'notifications'
+  | 'logout';
 
 type AuthenticatedUser = {
   id: string;
@@ -114,19 +102,6 @@ export default function App({ authUser, onLogout }: AppProps) {
     window.scrollTo(0, 0);
   };
 
-<<<<<<< HEAD
-  const handleLogout = () => {
-    try {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user');
-      sessionStorage.clear();
-    } catch {
-      // Ignore storage errors (e.g., private mode).
-    }
-    setCurrentPage('home');
-    window.scrollTo(0, 0);
-  };
-=======
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
@@ -177,7 +152,11 @@ export default function App({ authUser, onLogout }: AppProps) {
 
   const showSearchPopover = isSearchFocused && searchQuery.trim().length > 0;
   const quickResults = filteredBooks.slice(0, 6);
->>>>>>> a0e483341df46cb2cde8dfb4311f065f52a2bece
+  const handleLogout = () => {
+    onLogout();
+    setCurrentPage('home');
+    window.scrollTo(0, 0);
+  };
 
   const renderPage = () => {
     switch (currentPage) {
@@ -185,7 +164,7 @@ export default function App({ authUser, onLogout }: AppProps) {
       case 'categories': return <Categories onNavigate={navigateTo} />;
       case 'favorites': return <Favorites onNavigate={navigateTo} />;
       case 'downloads': return <Downloads onNavigate={navigateTo} />;
-      case 'settings': return <Settings />;
+      case 'settings': return <Settings onNavigate={navigateTo} />;
       case 'profile': return <Profile user={user} onUpdateUser={setUser} onNavigate={navigateTo} />;
       case 'search': return <SearchPage query={searchQuery} results={filteredBooks} onNavigate={navigateTo} />;
       case 'book-details': return <BookDetails book={selectedBook || books[0]} onNavigate={navigateTo} />;
