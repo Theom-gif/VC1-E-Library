@@ -43,6 +43,7 @@ import {
   BellOff,
   X
 } from 'lucide-react';
+import {API_BASE_URL} from './service/apiClient';
 
 export const Icons = {
   Book,
@@ -258,7 +259,8 @@ type ApiBookPayload = {
 const resolveApiBaseUrl = (): string => {
   const envBase = ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) || '';
   const trimmed = envBase.trim().replace(/\/$/, '');
-  return trimmed || 'http://127.0.0.1:8000';
+  const fromClient = String(API_BASE_URL || '').trim().replace(/\/$/, '');
+  return trimmed || fromClient || 'http://127.0.0.1:8000';
 };
 
 const asAbsoluteUrl = (value: string | undefined | null): string => {
@@ -267,11 +269,11 @@ const asAbsoluteUrl = (value: string | undefined | null): string => {
   if (/^(https?:|data:)/i.test(raw)) return raw;
 
   const base = resolveApiBaseUrl();
-  if (raw.startsWith('storage/')) {
-    return `${base}/${raw}`;
-  }
-
-  return `${base}/storage/${raw.replace(/^\/+/, '')}`;
+  const normalized = raw.replace(/^\/+/, '');
+  if (raw.startsWith('/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('storage/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('uploads/') || normalized.startsWith('images/') || normalized.startsWith('assets/')) return `${base}/${normalized}`;
+  return `${base}/storage/${normalized}`;
 };
 
 const normalizeApiBook = (book: ApiBookPayload, index: number): BookType | null => {
@@ -286,7 +288,7 @@ const normalizeApiBook = (book: ApiBookPayload, index: number): BookType | null 
     asAbsoluteUrl(book?.cover_url) ||
     asAbsoluteUrl(book?.cover) ||
     asAbsoluteUrl(book?.cover_image_path) ||
-    'https://picsum.photos/seed/library-cover/400/600';
+    '';
 
   const idValue = book?.id ?? `book-${index + 1}`;
 

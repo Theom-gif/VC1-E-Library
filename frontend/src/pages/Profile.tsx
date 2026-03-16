@@ -2,6 +2,7 @@ import React from 'react';
 import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 import {useLibrary} from '../context/LibraryContext';
+import CoverImage from '../components/CoverImage';
 
 interface ProfileProps {
   user: { name: string, photo: string, membership: string };
@@ -159,7 +160,7 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
                   onClick={() => onNavigate('book-details', book)}
                   className="p-4 rounded-2xl bg-surface border border-border flex gap-4 cursor-pointer group hover:border-primary/30 transition-all"
                 >
-                  <img src={book.cover} alt={book.title} className="w-20 h-28 object-cover rounded-lg shadow-lg" />
+                  <CoverImage src={book.cover} alt={book.title} className="w-20 h-28 object-cover rounded-lg shadow-lg" />
                   <div className="flex-1 flex flex-col justify-between py-1">
                     <div>
                       <h4 className="font-bold text-sm text-text group-hover:text-primary transition-colors line-clamp-1">{book.title}</h4>

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Icons, BookType } from '../types';
 import {useDownloads} from '../context/DownloadContext';
+import CoverImage from './CoverImage';
 
 interface BookCardProps {
   book: BookType;
@@ -22,7 +23,7 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
       className="space-y-3 cursor-pointer group"
     >
       <div className="relative aspect-[2/3] rounded-xl overflow-hidden shadow-xl">
-        <img src={book.cover} alt={book.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        <CoverImage src={book.cover} alt={book.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
           <button 
             className="p-2 rounded-full bg-primary text-white shadow-lg hover:scale-110 transition-transform"

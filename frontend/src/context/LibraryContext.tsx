@@ -32,13 +32,9 @@ export function LibraryProvider({children}: {children: React.ReactNode}) {
     setError(null);
     try {
       const response = await bookService.list({per_page: 50});
-      if (response.items.length > 0) {
-        setBooks(response.items);
-        setNewArrivals(response.items.slice(0, 5));
-        setSource('api');
-      } else {
-        setSource('mock');
-      }
+      setBooks(response.items);
+      setNewArrivals(response.items.slice(0, 5));
+      setSource('api');
     } catch (requestError: any) {
       setSource('mock');
       setError(pickErrorMessage(requestError));
@@ -49,6 +45,33 @@ export function LibraryProvider({children}: {children: React.ReactNode}) {
 
   React.useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  React.useEffect(() => {
+    const AUTO_REFRESH_MS = 60_000;
+    if (typeof window === 'undefined') return;
+
+    const intervalId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void refresh();
+    }, AUTO_REFRESH_MS);
+
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void refresh();
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    return () => {
+      window.clearInterval(intervalId);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+    };
   }, [refresh]);
 
   const value = useMemo(

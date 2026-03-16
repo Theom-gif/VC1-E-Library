@@ -15,6 +15,7 @@ import AuthorDetails from './pages/AuthorDetails';
 import NotificationsPage from './pages/Notifications';
 import Logout from './pages/Logout';
 import SearchPage from './pages/Search';
+import CoverImage from './components/CoverImage';
 
 type Page =
   | 'home'
@@ -253,7 +254,7 @@ export default function App({ authUser, onLogout }: AppProps) {
                                 setIsSearchFocused(false);
                               }}
                             >
-                              <img src={book.cover} alt={book.title} className="w-8 h-10 rounded object-cover border border-border" />
+                              <CoverImage src={book.cover} alt={book.title} className="w-8 h-10 rounded object-cover border border-border" />
                               <div className="min-w-0 flex-1">
                                 <div className="text-sm font-semibold text-text line-clamp-1">{book.title}</div>
                                 <div className="text-[11px] text-text-muted line-clamp-1">{book.author} • {book.category}</div>

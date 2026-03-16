@@ -2,6 +2,9 @@ import * as React from 'react';
 import { Icons, BookType } from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import {useLibrary} from '../context/LibraryContext';
+import bookService from '../service/bookService';
+import CoverImage from '../components/CoverImage';
+import {openReaderTab} from '../utils/openReaderTab';
 
 interface BookDetailsProps {
   book?: BookType | null;
@@ -80,6 +83,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     setEditingText('');
   };
 
+  const openOnline = async () => {
+    const url = await bookService.readUrl(String(currentBook.id));
+    openReaderTab({title: currentBook.title || 'Read', url});
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-12">
       {/* Breadcrumbs */}
@@ -95,7 +103,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       <section className="flex flex-col lg:flex-row gap-12">
         <div className="w-full lg:w-80 shrink-0 space-y-6">
           <div className="relative aspect-[2/3] rounded-3xl overflow-hidden shadow-2xl border border-border">
-            <img src={currentBook.cover} alt={currentBook.title} className="w-full h-full object-cover" />
+            <CoverImage src={currentBook.cover} alt={currentBook.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -105,11 +113,14 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                   void openOffline(String(currentBook.id)).catch((err: any) => {
                     window.alert(err?.message || 'Unable to open offline book.');
                   });
+                  return;
                 }
+                void openOnline().catch((err: any) => {
+                  window.alert(err?.message || 'Unable to open this book.');
+                });
               }}
-              className="bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-60"
-              disabled={!downloaded}
-              title={downloaded ? 'Open offline' : 'Download to read offline'}
+              className="bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+              title={downloaded ? 'Open offline' : 'Read in browser'}
             >
               <Icons.BookOpen className="size-4" />
               {downloaded ? 'Read Offline' : 'Read Now'}
@@ -325,7 +336,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               className="group cursor-pointer space-y-2"
             >
               <div className="aspect-[2/3] rounded-xl overflow-hidden shadow-lg">
-                <img src={item.cover} alt={item.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                <CoverImage src={item.cover} alt={item.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
               </div>
               <h4 className="text-xs font-bold text-text group-hover:text-primary transition-colors line-clamp-1">{item.title}</h4>
               <p className="text-[10px] text-text-muted">{item.author}</p>

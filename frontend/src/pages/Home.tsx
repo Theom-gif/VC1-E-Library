@@ -1,7 +1,8 @@
 import React from 'react';
-import { Icons, BookType } from '../types';
+import { Icons } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
+import CoverImage from '../components/CoverImage';
 import {useLibrary} from '../context/LibraryContext';
 
 interface HomeProps {
@@ -9,9 +10,43 @@ interface HomeProps {
 }
 
 export default function Home({ onNavigate }: HomeProps) {
-  const {books, newArrivals} = useLibrary();
+  const {books, newArrivals, isLoading, error, source, refresh} = useLibrary();
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-16">
+      {(isLoading || error || source === 'mock') && (
+        <div
+          className={`rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
+            error ? 'bg-red-500/10 border-red-500/20' : source === 'mock' ? 'bg-orange-500/10 border-orange-500/20' : 'bg-surface border-border'
+          }`}
+        >
+          <div className="text-sm">
+            {isLoading ? (
+              <span className="font-semibold text-text">Loading books from backend…</span>
+            ) : error ? (
+              <>
+                <span className="font-semibold text-text">Backend not reachable.</span>{' '}
+                <span className="text-text-muted">{error}</span>
+              </>
+            ) : source === 'mock' ? (
+              <>
+                <span className="font-semibold text-text">Showing mock data.</span>{' '}
+                <span className="text-text-muted">Connect `VITE_API_BASE_URL` to load real books.</span>
+              </>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="px-4 py-2 rounded-xl bg-surface border border-border hover:bg-white/10 transition-all text-sm font-semibold"
+              disabled={isLoading}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Hero Section */}
       <section className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-primary/20 via-bg to-bg border border-border p-8 md:p-16">
         <div className="relative z-10 max-w-2xl space-y-6">
@@ -54,31 +89,36 @@ export default function Home({ onNavigate }: HomeProps) {
           <button className="text-sm font-bold text-primary hover:underline">View All</button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {books.slice(0, 3).map((book) => (
-            <div 
-              key={book.id}
-              onClick={() => onNavigate('book-details', book)}
-              className="group flex gap-4 p-4 rounded-2xl bg-surface border border-border hover:border-primary/30 transition-all cursor-pointer"
-            >
-              <img src={book.cover} alt={book.title} className="w-24 h-32 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" />
-              <div className="flex-1 flex flex-col justify-between py-1">
-                <div>
-                  <h4 className="font-bold text-text group-hover:text-primary transition-colors line-clamp-1">{book.title}</h4>
-                  <p className="text-xs text-text-muted">{book.author}</p>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
-                    <span className="text-text-muted">Progress</span>
-                    <span className="text-primary">{book.progress}%</span>
+          {books.slice(0, 3).map((book) => {
+            const progress = Number.isFinite(Number(book.progress)) ? Number(book.progress) : 0;
+            const timeLeft = String(book.timeLeft || '').trim();
+
+            return (
+              <div
+                key={book.id}
+                onClick={() => onNavigate('book-details', book)}
+                className="group flex gap-4 p-4 rounded-2xl bg-surface border border-border hover:border-primary/30 transition-all cursor-pointer"
+              >
+                <CoverImage src={book.cover} alt={book.title} className="w-24 h-32 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" />
+                <div className="flex-1 flex flex-col justify-between py-1">
+                  <div>
+                    <h4 className="font-bold text-text group-hover:text-primary transition-colors line-clamp-1">{book.title}</h4>
+                    <p className="text-xs text-text-muted">{book.author}</p>
                   </div>
-                  <div className="h-1.5 w-full bg-surface rounded-full overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${book.progress}%` }} />
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                      <span className="text-text-muted">Progress</span>
+                      <span className="text-primary">{progress}%</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-surface rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full" style={{width: `${progress}%`}} />
+                    </div>
+                    {timeLeft ? <p className="text-[10px] text-text-muted italic">{timeLeft}</p> : null}
                   </div>
-                  <p className="text-[10px] text-text-muted italic">{book.timeLeft}</p>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -131,7 +171,7 @@ export default function Home({ onNavigate }: HomeProps) {
                 onClick={() => onNavigate('book-details', book)}
                 className="relative h-48 rounded-2xl overflow-hidden group cursor-pointer"
               >
-                <img src={book.cover} alt={book.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                <CoverImage src={book.cover} alt={book.title} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-6 flex flex-col justify-end">
                   <span className="text-[10px] font-bold uppercase text-primary mb-1">{book.category}</span>
                   <h4 className="text-lg font-bold text-white line-clamp-1">{book.title}</h4>
@@ -157,7 +197,7 @@ export default function Home({ onNavigate }: HomeProps) {
                 className="flex items-center gap-4 group cursor-pointer"
               >
                 <span className="text-2xl font-black text-text/10 group-hover:text-primary/20 transition-colors">0{i + 1}</span>
-                <img src={book.cover} alt={book.title} className="w-12 h-16 object-cover rounded shadow" />
+                <CoverImage src={book.cover} alt={book.title} className="w-12 h-16 object-cover rounded shadow" />
                 <div>
                   <h4 className="text-sm font-bold text-text group-hover:text-primary transition-colors line-clamp-1">{book.title}</h4>
                   <div className="flex items-center gap-1">

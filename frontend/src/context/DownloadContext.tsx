@@ -10,6 +10,7 @@ import {
   storageUsedBytes,
   type StoredDownload,
 } from '../offline/downloadsDb';
+import {openReaderTab} from '../utils/openReaderTab';
 
 type ActiveDownloadStatus = 'downloading' | 'paused' | 'error';
 
@@ -350,12 +351,11 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
     const record = await getDownload(bookId);
     if (!record) throw new Error('This book is not downloaded on this device.');
     const url = URL.createObjectURL(record.blob);
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      URL.revokeObjectURL(url);
-      throw new Error('Popup blocked. Please allow popups to open offline book.');
+    try {
+      openReaderTab({title: record.book?.title || 'Offline Read', url});
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     }
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }, []);
 
   const value = useMemo<DownloadState>(

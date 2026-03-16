@@ -1,4 +1,4 @@
-import apiClient from './apiClient';
+import apiClient, {API_BASE_URL} from './apiClient';
 import {withQuery} from './queryString';
 import type {BookType} from '../types';
 
@@ -40,29 +40,82 @@ function pickNumber(...values: unknown[]): number {
   return 0;
 }
 
+function asAbsoluteAssetUrl(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^(https?:|data:)/i.test(raw)) return raw;
+
+  const base = String(API_BASE_URL || '').replace(/\/+$/, '');
+  const normalized = raw.replace(/^\/+/, '');
+
+  if (!base) return raw.startsWith('/') ? raw : `/${normalized}`;
+  if (raw.startsWith('/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('storage/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('uploads/') || normalized.startsWith('images/') || normalized.startsWith('assets/')) {
+    return `${base}/${normalized}`;
+  }
+  return `${base}/storage/${normalized}`;
+}
+
+function asAbsoluteMaybeUrl(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (/^(https?:|data:)/i.test(raw)) return raw;
+  return asAbsoluteAssetUrl(raw);
+}
+
+function pickUrlFromObject(obj: any): string {
+  const direct = pickString(
+    obj?.read_url,
+    obj?.stream_url,
+    obj?.download_url,
+    obj?.file_url,
+    obj?.book_file_url,
+    obj?.pdf_url,
+    obj?.epub_url,
+    obj?.url,
+    obj?.file,
+    obj?.path,
+    obj?.file_path,
+  );
+  return asAbsoluteMaybeUrl(direct);
+}
+
+function pickCoverValue(raw: any): string {
+  const direct = pickString(
+    raw?.cover_image_url,
+    raw?.cover_url,
+    raw?.cover,
+    raw?.cover_image,
+    raw?.cover_image_path,
+    raw?.cover_path,
+    raw?.coverImageUrl,
+    raw?.coverImage,
+    raw?.image_url,
+    raw?.image,
+    raw?.thumbnail_url,
+    raw?.thumbnail,
+    raw?.cover_image?.url,
+    raw?.cover_image?.path,
+    raw?.coverImage?.url,
+    raw?.coverImage?.path,
+  );
+
+  return asAbsoluteAssetUrl(direct);
+}
+
 function toBookType(raw: any): BookType {
   const id = pickString(raw?.id, raw?.book_id, raw?._id, raw?.uuid);
   const title = pickString(raw?.title, raw?.name);
   const author = pickString(raw?.author?.name, raw?.author_name, raw?.author);
   const category = pickString(raw?.category?.name, raw?.category_name, raw?.category, 'Uncategorized');
-  const cover = pickString(
-    raw?.cover,
-    raw?.cover_url,
-    raw?.cover_image,
-    raw?.cover_image_url,
-    raw?.image,
-    raw?.image_url,
-    raw?.thumbnail,
-    raw?.thumbnail_url,
-  );
-
-  const safeCover = cover || (id ? `https://picsum.photos/seed/${encodeURIComponent(id)}/400/600` : 'https://picsum.photos/seed/book/400/600');
+  const cover = pickCoverValue(raw);
 
   return {
     id: id || `book_${Date.now()}`,
     title: title || 'Untitled',
     author: author || 'Unknown',
-    cover: safeCover,
+    cover: cover || '',
     category,
     rating: pickNumber(raw?.rating, raw?.avg_rating, raw?.average_rating),
     pages: raw?.pages !== undefined ? pickNumber(raw?.pages, raw?.page_count) : undefined,
@@ -71,13 +124,56 @@ function toBookType(raw: any): BookType {
   };
 }
 
+function isApprovedBook(raw: any): boolean {
+  const hasApprovalFlag =
+    raw?.is_approved !== undefined ||
+    raw?.approved !== undefined ||
+    raw?.approval_status !== undefined ||
+    raw?.status !== undefined ||
+    raw?.book_status !== undefined;
+
+  if (!hasApprovalFlag) return true;
+
+  const flag = raw?.is_approved ?? raw?.approved;
+  if (typeof flag === 'boolean') return flag;
+  if (typeof flag === 'number') return flag === 1;
+  if (typeof flag === 'string') {
+    const v = flag.trim().toLowerCase();
+    if (!v) return true;
+    return v === '1' || v === 'true' || v === 'approved' || v === 'active' || v === 'published';
+  }
+
+  const status = pickString(raw?.approval_status, raw?.status, raw?.book_status).toLowerCase();
+  if (!status) return true;
+  return status.includes('approved') || status === 'active' || status === 'published';
+}
+
 export const bookService = {
   list: async (params?: ListBooksParams) => {
-    const payload = (await apiClient.get(withQuery('/api/books', params), {
-      headers: {Accept: 'application/json'},
-    })) as ApiEnvelope<any>;
+    const requestList = async (path: string) =>
+      (await apiClient.get(withQuery(path, params), {
+        headers: {Accept: 'application/json'},
+      })) as ApiEnvelope<any>;
 
-    const items = Array.isArray(payload?.data) ? payload.data.map(toBookType) : [];
+    let payload: ApiEnvelope<any>;
+    try {
+      payload = await requestList('/api/books');
+    } catch (error: any) {
+      if (Number(error?.status) === 404) {
+        payload = await requestList('/api/auth/books');
+      } else {
+        throw error;
+      }
+    }
+
+    const rawList =
+      (Array.isArray((payload as any)?.data) && (payload as any).data) ||
+      (Array.isArray((payload as any)?.data?.data) && (payload as any).data.data) ||
+      (Array.isArray((payload as any)?.books) && (payload as any).books) ||
+      (Array.isArray((payload as any)?.results) && (payload as any).results) ||
+      [];
+
+    const items = Array.isArray(rawList) ? rawList.filter(isApprovedBook).map(toBookType) : [];
 
     return {
       items,
@@ -105,6 +201,30 @@ export const bookService = {
   similar: (id: string) => apiClient.get(`/api/books/${encodeURIComponent(id)}/similar`),
 
   download: (id: string) => apiClient.post(`/api/books/${encodeURIComponent(id)}/download`),
+
+  /**
+   * Returns a URL that can be opened in a new tab for "Read Now".
+   * Prefers a backend-provided `read_url`/`stream_url`/`download_url`.
+   */
+  readUrl: async (id: string) => {
+    const encodedId = encodeURIComponent(id);
+
+    // 1) Try book details first (some APIs include `file_url` etc).
+    try {
+      const details = await apiClient.get(`/api/books/${encodedId}`, {headers: {Accept: 'application/json'}});
+      const urlFromDetails = pickUrlFromObject((details as any)?.data ?? details);
+      if (urlFromDetails) return urlFromDetails;
+    } catch {
+      // Ignore and try download endpoint.
+    }
+
+    // 2) Fallback: use the download endpoint (expected to return a public/signed URL).
+    const payload = await apiClient.post(`/api/books/${encodedId}/download`);
+    const urlFromDownload = pickUrlFromObject((payload as any)?.data ?? payload);
+    if (urlFromDownload) return urlFromDownload;
+
+    throw new Error('Backend did not return a readable URL. Expected `read_url`, `stream_url`, or `download_url`.');
+  },
 };
 
 export default bookService;

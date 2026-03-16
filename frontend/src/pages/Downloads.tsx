@@ -1,6 +1,7 @@
 import React from 'react';
 import {Icons} from '../types';
 import {useDownloads} from '../context/DownloadContext';
+import CoverImage from '../components/CoverImage';
 
 interface DownloadsProps {
   onNavigate: (page: any, data?: any) => void;
@@ -69,7 +70,7 @@ export default function Downloads({onNavigate}: DownloadsProps) {
 
             {active.map((item) => (
               <div key={item.bookId} className="p-4 rounded-2xl bg-surface border border-border flex items-center gap-6">
-                <img src={item.book.cover} alt={item.book.title} className="w-12 h-16 object-cover rounded shadow-lg" />
+                <CoverImage src={item.book.cover} alt={item.book.title} className="w-12 h-16 object-cover rounded shadow-lg" />
 
                 <div className="flex-1 space-y-2">
                   <div className="flex justify-between items-start">
@@ -140,7 +141,7 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                 onClick={() => openOffline(item.bookId).catch(() => onNavigate('book-details', item.book))}
                 title="Open offline"
               >
-                <img src={item.book.cover} alt={item.book.title} className="w-16 h-24 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" />
+                <CoverImage src={item.book.cover} alt={item.book.title} className="w-16 h-24 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" />
 
                 <div className="flex-1">
                   <h4 className="font-bold text-text group-hover:text-primary transition-colors line-clamp-1">{item.book.title}</h4>
