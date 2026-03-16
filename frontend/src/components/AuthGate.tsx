@@ -23,8 +23,35 @@ const REGISTER_ROLES: Array<{label: string; role: RoleName; icon: typeof UserIco
   {label: 'ADMIN', role: 'admin', icon: Shield},
 ];
 
+function safeLocalStorageGet(key: string): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore (storage may be unavailable, e.g. file:// or blocked)
+  }
+}
+
+function safeLocalStorageRemove(key: string) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 function readSession(): SessionUser | null {
-  const raw = localStorage.getItem(SESSION_KEY);
+  const raw = safeLocalStorageGet(SESSION_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as SessionUser;
@@ -34,11 +61,11 @@ function readSession(): SessionUser | null {
 }
 
 function saveSession(user: SessionUser) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+  safeLocalStorageSet(SESSION_KEY, JSON.stringify(user));
 }
 
 function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
+  safeLocalStorageRemove(SESSION_KEY);
 }
 
 function createGuestSession(): SessionUser {
