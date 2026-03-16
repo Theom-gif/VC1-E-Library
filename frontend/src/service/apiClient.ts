@@ -1,0 +1,154 @@
+type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export type ApiClientOptions = Omit<RequestInit, 'method' | 'body'> & {
+  timeoutMs?: number;
+  body?: unknown;
+};
+
+export class ApiClientError extends Error {
+  status?: number;
+  data?: unknown;
+  method?: ApiMethod;
+  url?: string;
+}
+
+function defaultBaseUrl(): string {
+  if (typeof globalThis !== 'undefined' && globalThis.location) {
+    const protocol = String(globalThis.location.protocol || 'http:');
+    const hostname = String(globalThis.location.hostname || '127.0.0.1');
+    return `${protocol}//${hostname}:8000`;
+  }
+  return 'http://127.0.0.1:8000';
+}
+
+const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || defaultBaseUrl()).replace(/\/+$/, '');
+
+function buildUrl(path: string): string {
+  if (!path) return API_BASE_URL || '';
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
+
+async function parseResponse(response: Response): Promise<unknown> {
+  if (response.status === 204) return null;
+
+  const contentType = response.headers.get('content-type') || '';
+  const hasJson = contentType.includes('application/json') || contentType.includes('+json');
+
+  if (hasJson) {
+    const text = await response.text();
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  }
+
+  const text = await response.text();
+  return text || null;
+}
+
+function readToken(): string | null {
+  try {
+    return localStorage.getItem('token');
+  } catch {
+    return null;
+  }
+}
+
+function isFormData(value: unknown): value is FormData {
+  return typeof FormData !== 'undefined' && value instanceof FormData;
+}
+
+function isBlob(value: unknown): value is Blob {
+  return typeof Blob !== 'undefined' && value instanceof Blob;
+}
+
+async function request(method: ApiMethod, path: string, options: ApiClientOptions = {}) {
+  const url = buildUrl(path);
+  const token = readToken();
+  const {headers: optionHeaders, timeoutMs = 20000, body, signal, ...restOptions} = options || {};
+
+  const extraHeaders =
+    typeof Headers !== 'undefined' && optionHeaders instanceof Headers
+      ? Object.fromEntries(optionHeaders.entries())
+      : (optionHeaders as Record<string, string> | undefined) || {};
+
+  const headers: Record<string, string> = {
+    ...(token ? {Authorization: `Bearer ${token}`} : {}),
+    ...extraHeaders,
+  };
+
+  const hasBody = body !== undefined && body !== null;
+  const isBinaryBody = isFormData(body) || isBlob(body);
+  const shouldJsonStringifyBody = hasBody && !isBinaryBody && typeof body !== 'string';
+
+  if (hasBody && shouldJsonStringifyBody) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), Math.max(0, Number(timeoutMs) || 0))
+    : null;
+
+  let combinedSignal: AbortSignal | undefined = controller?.signal;
+  if (signal && controller) {
+    const onAbort = () => controller.abort();
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onAbort, {once: true});
+    combinedSignal = controller.signal;
+  } else if (signal) {
+    combinedSignal = signal;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      ...(hasBody
+        ? {
+            body: isBinaryBody
+              ? (body as any)
+              : shouldJsonStringifyBody
+                ? JSON.stringify(body)
+                : (body as any),
+          }
+        : {}),
+      signal: combinedSignal,
+      ...restOptions,
+    });
+
+    const data = await parseResponse(response);
+
+    if (!response.ok) {
+      const error = new ApiClientError(
+        (data as any)?.message || (data as any)?.error || `Request failed with status ${response.status}`,
+      );
+      error.status = response.status;
+      error.data = data;
+      error.method = method;
+      error.url = url;
+      throw error;
+    }
+
+    return data;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+const apiClient = {
+  request,
+  get: (path: string, options?: ApiClientOptions) => request('GET', path, options),
+  post: (path: string, body?: unknown, options?: ApiClientOptions) => request('POST', path, {...options, body}),
+  put: (path: string, body?: unknown, options?: ApiClientOptions) => request('PUT', path, {...options, body}),
+  patch: (path: string, body?: unknown, options?: ApiClientOptions) => request('PATCH', path, {...options, body}),
+  delete: (path: string, options?: ApiClientOptions) => request('DELETE', path, options),
+};
+
+export {API_BASE_URL};
+
+export default apiClient;

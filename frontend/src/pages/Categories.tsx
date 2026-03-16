@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Icons, MOCK_BOOKS } from '../types';
+import { Icons } from '../types';
 import BookCard from '../components/BookCard';
+import {useLibrary} from '../context/LibraryContext';
 
 interface CategoriesProps {
   onNavigate: (page: any, data?: any) => void;
@@ -22,11 +23,12 @@ const CATEGORIES = [
 const BOOKS_PER_PAGE = 8;
 
 export default function Categories({ onNavigate }: CategoriesProps) {
+  const {books} = useLibrary();
   const [activeCategory, setActiveCategory] = useState('All Genres');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const filteredBooks = MOCK_BOOKS.filter(book => {
+  const filteredBooks = books.filter(book => {
     // Category Filter
     const matchesCategory = activeCategory === 'All Genres' || 
       (activeCategory === 'Sci-Fi & Fantasy' && (book.category === 'Sci-Fi' || book.category === 'Fantasy')) ||

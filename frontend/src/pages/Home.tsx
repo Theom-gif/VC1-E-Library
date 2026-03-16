@@ -1,13 +1,15 @@
 import React from 'react';
-import { Icons, MOCK_BOOKS, NEW_ARRIVALS, BookType } from '../types';
+import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
+import {useLibrary} from '../context/LibraryContext';
 
 interface HomeProps {
   onNavigate: (page: any, data?: any) => void;
 }
 
 export default function Home({ onNavigate }: HomeProps) {
+  const {books, newArrivals} = useLibrary();
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-16">
       {/* Hero Section */}
@@ -52,7 +54,7 @@ export default function Home({ onNavigate }: HomeProps) {
           <button className="text-sm font-bold text-primary hover:underline">View All</button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {MOCK_BOOKS.slice(0, 3).map((book) => (
+          {books.slice(0, 3).map((book) => (
             <div 
               key={book.id}
               onClick={() => onNavigate('book-details', book)}
@@ -99,7 +101,7 @@ export default function Home({ onNavigate }: HomeProps) {
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-          {NEW_ARRIVALS.map((book) => (
+          {newArrivals.map((book) => (
             <BookCard 
               key={book.id} 
               book={book} 
@@ -123,7 +125,7 @@ export default function Home({ onNavigate }: HomeProps) {
             <button className="text-sm font-bold text-primary hover:underline">Explore</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {MOCK_BOOKS.slice(3, 5).map((book) => (
+            {books.slice(3, 5).map((book) => (
               <div 
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
@@ -148,7 +150,7 @@ export default function Home({ onNavigate }: HomeProps) {
             <h3 className="text-xl font-bold">Top Rated</h3>
           </div>
           <div className="space-y-4">
-            {MOCK_BOOKS.slice(0, 4).map((book, i) => (
+            {books.slice(0, 4).map((book, i) => (
               <div 
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
