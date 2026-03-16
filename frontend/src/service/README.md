@@ -2,7 +2,8 @@
 
 This folder (`frontend/src/service`) is the **API layer** for the UI. Today it contains:
 
-- `apiClient.js`: fetch wrapper + base URL + error handling + Bearer token header
+- `apiClient.ts`: fetch wrapper + base URL + error handling + Bearer token header
+- `apiClient.js`: thin re-export shim for JS imports
 - `authService.js`: login/register helpers that store `localStorage.token`
 
 The UI pages in `frontend/src/pages/` currently render from mock data (`MOCK_BOOKS`, `NEW_ARRIVALS` in `frontend/src/types.ts`). Use the workflow below to integrate real backend endpoints into the UI safely and incrementally.

@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Icons, BookType } from './types';
+import { Icons, BookType, hydrateBooksFromApi } from './types';
 import {useLibrary} from './context/LibraryContext';
 
 // Page Components
@@ -13,6 +13,7 @@ import Profile from './pages/Profile';
 import BookDetails from './pages/BookDetails';
 import AuthorDetails from './pages/AuthorDetails';
 import NotificationsPage from './pages/Notifications';
+import Logout from './pages/Logout';
 import SearchPage from './pages/Search';
 
 type Page =
@@ -25,7 +26,8 @@ type Page =
   | 'search'
   | 'book-details'
   | 'author-details'
-  | 'notifications';
+  | 'notifications'
+  | 'logout';
 
 type AuthenticatedUser = {
   id: string;
@@ -47,6 +49,7 @@ export default function App({ authUser, onLogout }: AppProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isLightMode, setIsLightMode] = useState(false);
+  const [, setBooksSyncVersion] = useState(0);
   const [user, setUser] = useState({
     name: authUser?.name || 'Library User',
     photo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
@@ -60,6 +63,23 @@ export default function App({ authUser, onLogout }: AppProps) {
       document.documentElement.classList.remove('light');
     }
   }, [isLightMode]);
+  React.useEffect(() => {
+    let isMounted = true;
+
+    hydrateBooksFromApi()
+      .then((count) => {
+        if (isMounted && count > 0) {
+          setBooksSyncVersion((value) => value + 1);
+        }
+      })
+      .catch(() => {
+        // Keep static mock data when backend is unavailable.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     setUser((prev) => ({
@@ -132,6 +152,11 @@ export default function App({ authUser, onLogout }: AppProps) {
 
   const showSearchPopover = isSearchFocused && searchQuery.trim().length > 0;
   const quickResults = filteredBooks.slice(0, 6);
+  const handleLogout = () => {
+    onLogout();
+    setCurrentPage('home');
+    window.scrollTo(0, 0);
+  };
 
   const renderPage = () => {
     switch (currentPage) {
@@ -139,12 +164,13 @@ export default function App({ authUser, onLogout }: AppProps) {
       case 'categories': return <Categories onNavigate={navigateTo} />;
       case 'favorites': return <Favorites onNavigate={navigateTo} />;
       case 'downloads': return <Downloads onNavigate={navigateTo} />;
-      case 'settings': return <Settings />;
+      case 'settings': return <Settings onNavigate={navigateTo} />;
       case 'profile': return <Profile user={user} onUpdateUser={setUser} onNavigate={navigateTo} />;
       case 'search': return <SearchPage query={searchQuery} results={filteredBooks} onNavigate={navigateTo} />;
       case 'book-details': return <BookDetails book={selectedBook || books[0]} onNavigate={navigateTo} />;
       case 'author-details': return <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
       case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
+      case 'logout': return <Logout onLogout={handleLogout} onNavigate={navigateTo} />;
       default: return <Home onNavigate={navigateTo} />;
     }
   };

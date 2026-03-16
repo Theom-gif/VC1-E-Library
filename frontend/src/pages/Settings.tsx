@@ -1,7 +1,11 @@
 import React from 'react';
 import { Icons } from '../types';
 
-export default function Settings() {
+interface SettingsProps {
+  onNavigate: (page: any, data?: any) => void;
+}
+
+export default function Settings({ onNavigate }: SettingsProps) {
   return (
     <div className="mx-auto max-w-4xl px-6 lg:px-20 py-10 space-y-10">
       <div>
@@ -18,7 +22,7 @@ export default function Settings() {
           <SettingTab icon={<Icons.Book className="size-4" />} label="Library Settings" />
           <SettingTab icon={<Icons.Globe className="size-4" />} label="Language & Region" />
           <div className="pt-4 mt-4 border-t border-border">
-            <SettingTab icon={<Icons.LogOut className="size-4" />} label="Sign Out" danger />
+            <SettingTab icon={<Icons.LogOut className="size-4" />} label="Sign Out" danger onClick={() => onNavigate('logout')} />
           </div>
         </nav>
 
@@ -84,9 +88,11 @@ export default function Settings() {
   );
 }
 
-function SettingTab({ icon, label, active, danger }: { icon: React.ReactNode, label: string, active?: boolean, danger?: boolean }) {
+function SettingTab({ icon, label, active, danger, onClick }: { icon: React.ReactNode, label: string, active?: boolean, danger?: boolean, onClick?: () => void }) {
   return (
-    <button className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
       active 
         ? 'bg-primary/10 text-primary' 
         : danger 

@@ -99,6 +99,12 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
                 >
                   Edit Profile
                 </button>
+                <button
+                  onClick={() => onNavigate('logout')}
+                  className="bg-surface text-red-500 border border-red-500/30 px-6 py-2 rounded-xl font-bold hover:bg-red-500/10 transition-all"
+                >
+                  Log Out
+                </button>
                 <button className="bg-surface text-text border border-border p-2 rounded-xl hover:bg-white/10 transition-all">
                   <Icons.Share2 className="size-5" />
                 </button>
