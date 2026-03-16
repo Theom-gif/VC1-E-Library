@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Icons, BookType } from '../types';
+import {useDownloads} from '../context/DownloadContext';
 import {useLibrary} from '../context/LibraryContext';
 
 interface BookDetailsProps {
@@ -20,8 +21,12 @@ interface Comment {
 
 export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const {books} = useLibrary();
+  const {startDownload, resume, openOffline, isDownloaded, activeById} = useDownloads();
   const currentBook = book ?? books[0];
   if (!currentBook) return null;
+
+  const active = activeById(String(currentBook.id));
+  const downloaded = isDownloaded(String(currentBook.id));
   const [commentText, setCommentText] = React.useState('');
   const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
   const [editingText, setEditingText] = React.useState('');
@@ -94,13 +99,49 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <button className="bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
+            <button
+              onClick={() => {
+                if (downloaded) {
+                  void openOffline(String(currentBook.id)).catch((err: any) => {
+                    window.alert(err?.message || 'Unable to open offline book.');
+                  });
+                }
+              }}
+              className="bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-60"
+              disabled={!downloaded}
+              title={downloaded ? 'Open offline' : 'Download to read offline'}
+            >
               <Icons.BookOpen className="size-4" />
-              Read Now
+              {downloaded ? 'Read Offline' : 'Read Now'}
             </button>
-            <button className="bg-surface text-text border border-border py-3 rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2">
+            <button
+              onClick={() => {
+                if (downloaded) {
+                  void openOffline(String(currentBook.id)).catch((err: any) => {
+                    window.alert(err?.message || 'Unable to open offline book.');
+                  });
+                  return;
+                }
+                if (active && active.status === 'paused') {
+                  void resume(currentBook);
+                  onNavigate('downloads');
+                  return;
+                }
+                void startDownload(currentBook);
+                onNavigate('downloads');
+              }}
+              className="bg-surface text-text border border-border py-3 rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              disabled={Boolean(active && active.status === 'downloading')}
+              title={downloaded ? 'Open offline' : 'Download for offline reading'}
+            >
               <Icons.Download className="size-4" />
-              Download
+              {downloaded
+                ? 'Open Offline'
+                : active && active.status === 'downloading'
+                  ? `Downloading ${active.progress}%`
+                  : active && active.status === 'paused'
+                    ? 'Resume Download'
+                    : 'Download'}
             </button>
           </div>
           <button className="w-full bg-surface text-text border border-border py-3 rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2">

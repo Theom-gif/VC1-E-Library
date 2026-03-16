@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Icons, BookType } from '../types';
+import {useDownloads} from '../context/DownloadContext';
 
 interface BookCardProps {
   book: BookType;
@@ -10,6 +11,10 @@ interface BookCardProps {
 }
 
 export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps) {
+  const {startDownload, resume, openOffline, isDownloaded, activeById} = useDownloads();
+  const downloaded = isDownloaded(String(book.id));
+  const active = activeById(String(book.id));
+
   return (
     <motion.div 
       whileHover={{ y: -5 }}
@@ -23,9 +28,19 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
             className="p-2 rounded-full bg-primary text-white shadow-lg hover:scale-110 transition-transform"
             onClick={(e) => {
               e.stopPropagation();
-              // In a real app, this would trigger a download
-              alert(`Downloading ${book.title}...`);
+              if (downloaded) {
+                void openOffline(String(book.id)).catch((err: any) => {
+                  window.alert(err?.message || 'Unable to open offline book.');
+                });
+                return;
+              }
+              if (active?.status === 'paused') {
+                void resume(book);
+                return;
+              }
+              void startDownload(book);
             }}
+            title={downloaded ? 'Open offline' : active?.status === 'downloading' ? `Downloading ${active.progress}%` : 'Download for offline reading'}
           >
             <Icons.Download className="size-4" />
           </button>

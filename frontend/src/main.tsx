@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import AuthGate from './components/AuthGate.tsx';
+import {DownloadProvider} from './context/DownloadContext.tsx';
 import {LibraryProvider} from './context/LibraryContext.tsx';
 import './index.css';
 
@@ -10,7 +11,9 @@ createRoot(document.getElementById('root')!).render(
     <AuthGate>
       {({user, logout}) => (
         <LibraryProvider>
-          <App authUser={user} onLogout={logout} />
+          <DownloadProvider>
+            <App authUser={user} onLogout={logout} />
+          </DownloadProvider>
         </LibraryProvider>
       )}
     </AuthGate>

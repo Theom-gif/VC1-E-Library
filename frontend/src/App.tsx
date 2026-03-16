@@ -48,7 +48,7 @@ export default function App({ authUser, onLogout }: AppProps) {
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isLightMode, setIsLightMode] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(true);
   const [, setBooksSyncVersion] = useState(0);
   const [user, setUser] = useState({
     name: authUser?.name || 'Library User',
@@ -57,11 +57,8 @@ export default function App({ authUser, onLogout }: AppProps) {
   });
 
   React.useEffect(() => {
-    if (isLightMode) {
-      document.documentElement.classList.add('light');
-    } else {
-      document.documentElement.classList.remove('light');
-    }
+    if (isLightMode) document.documentElement.classList.remove('dark');
+    else document.documentElement.classList.add('dark');
   }, [isLightMode]);
   React.useEffect(() => {
     let isMounted = true;

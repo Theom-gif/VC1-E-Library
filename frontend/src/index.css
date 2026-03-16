@@ -13,19 +13,19 @@
 }
 
 :root {
-  --bg-color: #081d24;
-  --text-color: #f1f5f9;
-  --text-muted-color: rgba(204, 251, 241, 0.5); /* teal-100/50 */
-  --surface-color: rgba(255, 255, 255, 0.05);
-  --border-color: rgba(255, 255, 255, 0.1);
-}
-
-:root.light {
   --bg-color: #f8fafc;
   --text-color: #000000;
   --text-muted-color: #475569; /* slate-600 */
   --surface-color: #ffffff;
   --border-color: #e2e8f0;
+}
+
+:root.dark {
+  --bg-color: #081d24;
+  --text-color: #f1f5f9;
+  --text-muted-color: rgba(204, 251, 241, 0.5); /* teal-100/50 */
+  --surface-color: rgba(255, 255, 255, 0.05);
+  --border-color: rgba(255, 255, 255, 0.1);
 }
 
 @layer base {
