@@ -13,12 +13,31 @@ export class ApiClientError extends Error {
 }
 
 function defaultBaseUrl(): string {
+  const productionHostname = 'elibrary.pncproject.site';
+  const productionBaseUrl = `https://${productionHostname}`;
+
   if (typeof globalThis !== 'undefined' && globalThis.location) {
-    const protocol = String(globalThis.location.protocol || 'http:');
-    const hostname = String(globalThis.location.hostname || '127.0.0.1');
-    return `${protocol}//${hostname}:8000`;
+    const protocol = String(globalThis.location.protocol || 'https:');
+    const hostname = String(globalThis.location.hostname || '');
+    const port = String(globalThis.location.port || '');
+
+    const safeProtocol = protocol === 'http:' || protocol === 'https:' ? protocol : 'https:';
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') {
+      return `${safeProtocol}//${hostname}:8000`;
+    }
+
+    if (hostname) {
+      if (hostname === productionHostname) return productionBaseUrl;
+
+      if (port && port !== '80' && port !== '443') {
+        return `${safeProtocol}//${hostname}:8000`;
+      }
+      return `${safeProtocol}//${hostname}`;
+    }
   }
-  return 'http://127.0.0.1:8000';
+
+  return productionBaseUrl;
 }
 
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || defaultBaseUrl()).replace(/\/+$/, '');
