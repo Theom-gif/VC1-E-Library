@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import * as React from 'react';
 import { Icons, BookType, MOCK_BOOKS } from '../types';
 
 interface BookDetailsProps {
-  book: BookType;
+  book?: BookType | null;
   onNavigate: (page: any, data?: any) => void;
 }
 
@@ -18,10 +18,11 @@ interface Comment {
 }
 
 export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
-  const [commentText, setCommentText] = useState('');
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState('');
-  const [comments, setComments] = useState<Comment[]>([
+  const currentBook = book ?? MOCK_BOOKS[0];
+  const [commentText, setCommentText] = React.useState('');
+  const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
+  const [editingText, setEditingText] = React.useState('');
+  const [comments, setComments] = React.useState<Comment[]>([
     {
       id: '1',
       user: 'Sarah Miller',
@@ -48,7 +49,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       rating: 5.0
     };
 
-    setComments([newComment, ...comments]);
+    setComments((prev) => [newComment, ...prev]);
     setCommentText('');
   };
 
@@ -58,7 +59,10 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   };
 
   const handleEditSave = (id: string) => {
-    setComments(comments.map(c => c.id === id ? { ...c, text: editingText } : c));
+    const nextText = editingText.trim();
+    if (!nextText) return;
+
+    setComments((prev) => prev.map((c) => (c.id === id ? { ...c, text: nextText } : c)));
     setEditingCommentId(null);
     setEditingText('');
   };
@@ -74,16 +78,16 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       <nav className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted">
         <button onClick={() => onNavigate('home')} className="hover:text-primary transition-colors">Home</button>
         <Icons.ChevronRight className="size-3" />
-        <button onClick={() => onNavigate('categories')} className="hover:text-primary transition-colors">{book.category}</button>
+        <button onClick={() => onNavigate('categories')} className="hover:text-primary transition-colors">{currentBook.category}</button>
         <Icons.ChevronRight className="size-3" />
-        <span className="text-text">{book.title}</span>
+        <span className="text-text">{currentBook.title}</span>
       </nav>
 
       {/* Main Info */}
       <section className="flex flex-col lg:flex-row gap-12">
         <div className="w-full lg:w-80 shrink-0 space-y-6">
           <div className="relative aspect-[2/3] rounded-3xl overflow-hidden shadow-2xl border border-border">
-            <img src={book.cover} alt={book.title} className="w-full h-full object-cover" />
+            <img src={currentBook.cover} alt={currentBook.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -106,24 +110,24 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <span className="px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold uppercase tracking-widest">
-                {book.category}
+                {currentBook.category}
               </span>
               <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-bold uppercase tracking-widest">
                 Best Seller
               </span>
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold leading-tight text-text">{book.title}</h1>
+            <h1 className="text-4xl md:text-5xl font-bold leading-tight text-text">{currentBook.title}</h1>
             <div className="flex items-center gap-6">
               <div 
                 className="flex items-center gap-3 cursor-pointer group/author"
-                onClick={() => onNavigate('author-details', book.author)}
+                onClick={() => onNavigate('author-details', currentBook.author)}
               >
                 <div className="size-10 rounded-full bg-surface border border-border overflow-hidden group-hover/author:border-primary transition-colors">
-                  <img src={`https://picsum.photos/seed/${book.author}/100/100`} alt={book.author} className="w-full h-full object-cover" />
+                  <img src={`https://picsum.photos/seed/${currentBook.author}/100/100`} alt={currentBook.author} className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <p className="text-xs font-bold text-text-muted uppercase tracking-tighter">Author</p>
-                  <p className="text-sm font-bold text-text group-hover/author:text-primary transition-colors">{book.author}</p>
+                  <p className="text-sm font-bold text-text group-hover/author:text-primary transition-colors">{currentBook.author}</p>
                 </div>
               </div>
               <button className="px-4 py-1.5 rounded-lg border border-primary/30 text-primary text-[11px] font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all">
@@ -133,17 +137,17 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               <div className="flex items-center gap-2">
                 <div className="flex">
                   {[1, 2, 3, 4, 5].map((s) => (
-                    <Icons.Star key={s} className={`size-4 ${s <= Math.floor(book.rating) ? 'text-yellow-500 fill-yellow-500' : 'text-text/10'}`} />
+                    <Icons.Star key={s} className={`size-4 ${s <= Math.floor(currentBook.rating) ? 'text-yellow-500 fill-yellow-500' : 'text-text/10'}`} />
                   ))}
                 </div>
-                <span className="text-sm font-bold text-text">{book.rating}</span>
-                <span className="text-xs text-text-muted">({book.reviews?.toLocaleString() || '1.2k'} reviews)</span>
+                <span className="text-sm font-bold text-text">{currentBook.rating}</span>
+                <span className="text-xs text-text-muted">({currentBook.reviews?.toLocaleString() || '1.2k'} reviews)</span>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-6 border-y border-border">
-            <BookStat label="Pages" value={book.pages?.toString() || '342'} />
+            <BookStat label="Pages" value={currentBook.pages?.toString() || '342'} />
             <BookStat label="Language" value="English" />
             <BookStat label="Format" value="EPUB, PDF" />
             <BookStat label="Published" value="2021" />
@@ -152,7 +156,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
           <div className="space-y-4">
             <h3 className="text-xl font-bold text-text">About this book</h3>
             <p className="text-text-muted leading-relaxed">
-              {book.description || "In this groundbreaking work, the author explores the fundamental principles that govern our understanding of the world. Through a series of compelling narratives and rigorous analysis, the book challenges conventional wisdom and offers a fresh perspective on the challenges we face in the 21st century."}
+              {currentBook.description || "In this groundbreaking work, the author explores the fundamental principles that govern our understanding of the world. Through a series of compelling narratives and rigorous analysis, the book challenges conventional wisdom and offers a fresh perspective on the challenges we face in the 21st century."}
             </p>
             <button className="text-sm font-bold text-primary hover:underline">Read More</button>
           </div>

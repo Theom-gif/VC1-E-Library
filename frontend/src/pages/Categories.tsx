@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Icons, MOCK_BOOKS, BookType } from '../types';
-import { motion } from 'motion/react';
+import { Icons, MOCK_BOOKS } from '../types';
 import BookCard from '../components/BookCard';
 
 interface CategoriesProps {
@@ -70,7 +69,7 @@ export default function Categories({ onNavigate }: CategoriesProps) {
               >
                 <div className="flex items-center gap-4">
                   <div className={`${activeCategory === cat.name ? 'text-white' : 'text-text-muted/40'}`}>
-                    {React.cloneElement(cat.icon as React.ReactElement, { className: 'size-5' })}
+                    {cat.icon}
                   </div>
                   <span className="text-[15px] font-bold tracking-tight">{cat.name}</span>
                 </div>
