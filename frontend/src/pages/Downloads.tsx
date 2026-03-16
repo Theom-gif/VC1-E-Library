@@ -22,7 +22,7 @@ function formatBytes(value: number) {
 
 function formatSpeed(value: number) {
   const speed = Math.max(0, Number(value) || 0);
-  if (!speed) return '—';
+  if (!speed) return '\u2014';
   return `${formatBytes(speed)}/s`;
 }
 
@@ -77,7 +77,7 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                     <div>
                       <h4 className="font-bold text-sm text-text">{item.book.title}</h4>
                       <p className="text-[10px] text-text-muted">
-                        {item.book.author} • {item.totalBytes ? formatBytes(item.totalBytes) : formatBytes(item.receivedBytes)}
+                        {item.book.author} {'\u2022'} {item.totalBytes ? formatBytes(item.totalBytes) : formatBytes(item.receivedBytes)}
                       </p>
                     </div>
                     <div className="text-right">
@@ -188,3 +188,4 @@ export default function Downloads({onNavigate}: DownloadsProps) {
     </div>
   );
 }
+
