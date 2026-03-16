@@ -34,8 +34,8 @@ export const authService = {
 
   register: async (payload) => {
     const registerPaths = [
-      '/api/auth/user_registration',
       '/api/auth/register',
+      '/api/auth/user_registration',
       '/api/register',
       '/register',
     ];

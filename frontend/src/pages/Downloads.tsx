@@ -1,18 +1,28 @@
 import React from 'react';
-import { Icons, MOCK_BOOKS, BookType } from '../types';
+import { Icons, BookType } from '../types';
+import {useLibrary} from '../context/LibraryContext';
 
 interface DownloadsProps {
   onNavigate: (page: any, data?: any) => void;
 }
 
-const DOWNLOADS: BookType[] = [
-  { ...MOCK_BOOKS[0], size: '12.4 MB', status: 'Downloading', downloadProgress: 45, speed: '1.2 MB/s' },
-  { ...MOCK_BOOKS[1], size: '8.2 MB', status: 'Paused', downloadProgress: 22, speed: '0 KB/s' },
-  { ...MOCK_BOOKS[2], size: '15.1 MB', status: 'Completed', downloadProgress: 100, speed: 'Done' },
-  { ...MOCK_BOOKS[3], size: '5.7 MB', status: 'Completed', downloadProgress: 100, speed: 'Done' },
-];
-
 export default function Downloads({ onNavigate }: DownloadsProps) {
+  const {books} = useLibrary();
+
+  const downloads: BookType[] = React.useMemo(() => {
+    const templates = [
+      {size: '12.4 MB', status: 'Downloading', downloadProgress: 45, speed: '1.2 MB/s'},
+      {size: '8.2 MB', status: 'Paused', downloadProgress: 22, speed: '0 KB/s'},
+      {size: '15.1 MB', status: 'Completed', downloadProgress: 100, speed: 'Done'},
+      {size: '5.7 MB', status: 'Completed', downloadProgress: 100, speed: 'Done'},
+    ] as const;
+
+    return books.slice(0, templates.length).map((book, index) => ({
+      ...book,
+      ...templates[index],
+    }));
+  }, [books]);
+
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-10">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
@@ -42,7 +52,7 @@ export default function Downloads({ onNavigate }: DownloadsProps) {
             <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">2</span>
           </h3>
           <div className="space-y-3">
-            {DOWNLOADS.filter(d => d.status !== 'Completed').map((item) => (
+            {downloads.filter(d => d.status !== 'Completed').map((item) => (
               <div key={item.id} className="p-4 rounded-2xl bg-surface border border-border flex items-center gap-6">
                 <img src={item.cover} alt={item.title} className="w-12 h-16 object-cover rounded shadow-lg" />
                 <div className="flex-1 space-y-2">
@@ -83,7 +93,7 @@ export default function Downloads({ onNavigate }: DownloadsProps) {
             <span className="px-2 py-0.5 rounded-full bg-surface text-text-muted text-[10px] font-bold">12</span>
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {DOWNLOADS.filter(d => d.status === 'Completed').map((item) => (
+            {downloads.filter(d => d.status === 'Completed').map((item) => (
               <div 
                 key={item.id} 
                 className="group p-4 rounded-2xl bg-surface border border-border hover:border-primary/30 transition-all flex items-center gap-4 cursor-pointer"

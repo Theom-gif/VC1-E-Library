@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Icons, MOCK_BOOKS, BookType } from '../types';
+import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
+import {useLibrary} from '../context/LibraryContext';
 
 interface FavoritesProps {
   onNavigate: (page: any, data?: any) => void;
@@ -10,33 +11,34 @@ interface FavoritesProps {
 type TabType = 'All Favorites' | 'Recently Added' | 'Reading Progress' | 'Completed';
 
 export default function Favorites({ onNavigate }: FavoritesProps) {
+  const {books} = useLibrary();
   const [activeTab, setActiveTab] = useState<TabType>('All Favorites');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredBooks = useMemo(() => {
-    let books = MOCK_BOOKS;
+    let items = books;
 
     // Filter by tab
     if (activeTab === 'Recently Added') {
       // Just showing all for now as we don't have "added date"
-      books = MOCK_BOOKS;
+      items = books;
     } else if (activeTab === 'Reading Progress') {
-      books = MOCK_BOOKS.filter(b => (b.progress && b.progress > 0 && b.progress < 100) || b.status === 'Currently Reading');
+      items = books.filter(b => (b.progress && b.progress > 0 && b.progress < 100) || b.status === 'Currently Reading');
     } else if (activeTab === 'Completed') {
-      books = MOCK_BOOKS.filter(b => b.status === 'Completed' || b.progress === 100);
+      items = books.filter(b => b.status === 'Completed' || b.progress === 100);
     }
 
     // Filter by search
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      books = books.filter(b => 
+      items = items.filter(b => 
         b.title.toLowerCase().includes(query) || 
         b.author.toLowerCase().includes(query)
       );
     }
 
-    return books;
-  }, [activeTab, searchQuery]);
+    return items;
+  }, [activeTab, searchQuery, books]);
 
   const tabs: TabType[] = ['All Favorites', 'Recently Added', 'Reading Progress', 'Completed'];
 

@@ -1,10 +1,15 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { Icons, MOCK_BOOKS, BookType, hydrateBooksFromApi } from './types';
 =======
 import { Icons, MOCK_BOOKS, NEW_ARRIVALS, BookType } from './types';
 >>>>>>> a0e483341df46cb2cde8dfb4311f065f52a2bece
+=======
+import { Icons, BookType } from './types';
+import {useLibrary} from './context/LibraryContext';
+>>>>>>> 9be4c366780bfd787bcdb47b3328fa905ef9a183
 
 // Page Components
 import Home from './pages/Home';
@@ -49,6 +54,7 @@ type AppProps = {
 };
 
 export default function App({ authUser, onLogout }: AppProps) {
+  const {books, newArrivals} = useLibrary();
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -136,9 +142,9 @@ export default function App({ authUser, onLogout }: AppProps) {
 
   const libraryBooks = useMemo(() => {
     const byId = new Map<string, BookType>();
-    [...NEW_ARRIVALS, ...MOCK_BOOKS].forEach((book) => byId.set(book.id, book));
+    [...newArrivals, ...books].forEach((book) => byId.set(book.id, book));
     return Array.from(byId.values());
-  }, []);
+  }, [books, newArrivals]);
 
   const filteredBooks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -182,7 +188,7 @@ export default function App({ authUser, onLogout }: AppProps) {
       case 'settings': return <Settings />;
       case 'profile': return <Profile user={user} onUpdateUser={setUser} onNavigate={navigateTo} />;
       case 'search': return <SearchPage query={searchQuery} results={filteredBooks} onNavigate={navigateTo} />;
-      case 'book-details': return <BookDetails book={selectedBook || MOCK_BOOKS[0]} onNavigate={navigateTo} />;
+      case 'book-details': return <BookDetails book={selectedBook || books[0]} onNavigate={navigateTo} />;
       case 'author-details': return <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
       case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
       case 'logout': return <Logout onLogout={handleLogout} onNavigate={navigateTo} />;

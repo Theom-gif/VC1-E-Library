@@ -1,6 +1,7 @@
 import React from 'react';
-import { Icons, MOCK_BOOKS, BookType } from '../types';
+import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
+import {useLibrary} from '../context/LibraryContext';
 
 interface ProfileProps {
   user: { name: string, photo: string, membership: string };
@@ -9,6 +10,7 @@ interface ProfileProps {
 }
 
 export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps) {
+  const {books} = useLibrary();
   const [isEditing, setIsEditing] = React.useState(false);
   const [editName, setEditName] = React.useState(user.name);
   const [editPhoto, setEditPhoto] = React.useState(user.photo);
@@ -151,7 +153,7 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
           <section className="space-y-6">
             <h3 className="text-xl font-bold text-text">Currently Reading</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {MOCK_BOOKS.slice(0, 2).map((book) => (
+              {books.slice(0, 2).map((book) => (
                 <div 
                   key={book.id}
                   onClick={() => onNavigate('book-details', book)}

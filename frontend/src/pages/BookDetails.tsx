@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Icons, BookType, MOCK_BOOKS } from '../types';
+import { Icons, BookType } from '../types';
+import {useLibrary} from '../context/LibraryContext';
 
 interface BookDetailsProps {
   book?: BookType | null;
@@ -18,7 +19,9 @@ interface Comment {
 }
 
 export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
-  const currentBook = book ?? MOCK_BOOKS[0];
+  const {books} = useLibrary();
+  const currentBook = book ?? books[0];
+  if (!currentBook) return null;
   const [commentText, setCommentText] = React.useState('');
   const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
   const [editingText, setEditingText] = React.useState('');
@@ -274,7 +277,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       <section className="space-y-6">
         <h3 className="text-2xl font-bold">Similar Books</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
-          {MOCK_BOOKS.slice(0, 6).map((item) => (
+          {books.slice(0, 6).map((item) => (
             <div 
               key={item.id} 
               onClick={() => onNavigate('book-details', item)}

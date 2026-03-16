@@ -1,7 +1,8 @@
 import React from 'react';
-import { Icons, MOCK_BOOKS, NEW_ARRIVALS, BookType } from '../types';
+import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
+import {useLibrary} from '../context/LibraryContext';
 
 interface AuthorDetailsProps {
   authorName: string;
@@ -9,8 +10,9 @@ interface AuthorDetailsProps {
 }
 
 export default function AuthorDetails({ authorName, onNavigate }: AuthorDetailsProps) {
+  const {books, newArrivals} = useLibrary();
   // Combine all books and filter by author
-  const allBooks = [...MOCK_BOOKS, ...NEW_ARRIVALS];
+  const allBooks = [...books, ...newArrivals];
   const authorBooks = allBooks.filter(book => book.author === authorName);
   
   // Mock author data
