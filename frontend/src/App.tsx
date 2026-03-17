@@ -16,6 +16,15 @@ import NotificationsPage from './pages/Notifications';
 import Logout from './pages/Logout';
 import SearchPage from './pages/Search';
 import CoverImage from './components/CoverImage';
+import {
+  AUTH_REQUIRED_EVENT,
+  getMembershipTier,
+  hasReachedReadLimit,
+  isGuestSession,
+  MEMBERSHIP_TIER_EVENT,
+  MembershipTier,
+  setAuthRequired,
+} from './utils/readerUpgrade';
 
 type Page =
   | 'home'
@@ -44,6 +53,10 @@ type AppProps = {
 
 export default function App({ authUser, onLogout }: AppProps) {
   const {books, newArrivals} = useLibrary();
+  const [membershipTier, setMembershipTier] = useState<MembershipTier>(() => getMembershipTier());
+  const [showAccessPrompt, setShowAccessPrompt] = useState(false);
+  const [pendingNav, setPendingNav] = useState<{page: Page; data?: any} | null>(null);
+  const [accessPromptReason, setAccessPromptReason] = useState<'feature' | 'read-limit'>('feature');
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -54,7 +67,7 @@ export default function App({ authUser, onLogout }: AppProps) {
   const [user, setUser] = useState({
     name: authUser?.name || 'Library User',
     photo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
-    membership: 'Premium Member'
+    membership: membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
   });
 
   React.useEffect(() => {
@@ -86,6 +99,53 @@ export default function App({ authUser, onLogout }: AppProps) {
     }));
   }, [authUser?.name]);
 
+  React.useEffect(() => {
+    setUser((prev) => ({
+      ...prev,
+      membership: membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
+    }));
+  }, [membershipTier]);
+
+  React.useEffect(() => {
+    const handleAuthRequired = (event: Event) => {
+      const reason = (event as CustomEvent)?.detail?.reason;
+      setAccessPromptReason(reason === 'feature' ? 'feature' : 'read-limit');
+      setShowAccessPrompt(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const handleTierChange = (event: Event) => {
+      const next = (event as CustomEvent)?.detail;
+      if (next === 'reader' || next === 'normal') {
+        setMembershipTier(next);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener(MEMBERSHIP_TIER_EVENT, handleTierChange as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener(MEMBERSHIP_TIER_EVENT, handleTierChange as EventListener);
+      }
+    };
+  }, []);
+
+  const handleAuthRedirect = () => {
+    setAuthRequired(true);
+    setShowAccessPrompt(false);
+    setPendingNav(null);
+    onLogout();
+  };
+
   const notifications = [
     { id: 1, type: 'new', title: 'New Arrival', message: 'Sea of Tranquility is now available!', time: '2m ago', unread: true, icon: <Icons.Book className="size-4" /> },
     { id: 2, type: 'download', title: 'Download Complete', message: 'The Great Gatsby has been downloaded.', time: '1h ago', unread: false, icon: <Icons.Download className="size-4" /> },
@@ -94,6 +154,13 @@ export default function App({ authUser, onLogout }: AppProps) {
   ];
 
   const navigateTo = (page: Page, data?: any) => {
+    const readLimitReached = isGuestSession() && hasReachedReadLimit(2);
+    if (readLimitReached && page !== 'home' && page !== 'logout') {
+      setPendingNav({page, data});
+      setAccessPromptReason('read-limit');
+      setShowAccessPrompt(true);
+      return;
+    }
     if (page === 'book-details' && data) setSelectedBook(data);
     if (page === 'author-details' && data) setSelectedAuthor(data);
     setCurrentPage(page);
@@ -404,6 +471,44 @@ export default function App({ authUser, onLogout }: AppProps) {
         <MobileNavLink active={currentPage === 'favorites'} onClick={() => navigateTo('favorites')} icon={<Icons.Heart className="size-5" />} label="Favorites" />
         <MobileNavLink active={currentPage === 'profile'} onClick={() => navigateTo('profile')} icon={<Icons.User className="size-5" />} label="Profile" />
       </nav>
+
+      {showAccessPrompt ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-xl rounded-3xl border border-border bg-bg p-8 shadow-2xl">
+            <div className="flex items-center gap-3 text-primary">
+              <Icons.User className="size-6" />
+              <p className="text-xs font-bold uppercase tracking-widest">Reader Access Required</p>
+            </div>
+            <h3 className="mt-4 text-2xl font-bold text-text">
+              {accessPromptReason === 'read-limit' ? 'Reading limit reached.' : 'This feature is for Readers.'}
+            </h3>
+            <p className="mt-2 text-sm text-text-muted leading-relaxed">
+              {accessPromptReason === 'read-limit'
+                ? 'You have reached the free reading limit. Please register or login to continue reading and unlock full access.'
+                : 'To use this page, please register or login as a Reader. You can continue browsing as a normal user.'}
+            </p>
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAccessPrompt(false);
+                  setPendingNav(null);
+                }}
+                className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-bold text-text-muted hover:text-text hover:bg-white/5 transition-all"
+              >
+                Not Now
+              </button>
+              <button
+                type="button"
+                onClick={handleAuthRedirect}
+                className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 transition-all"
+              >
+                Login / Register
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -13,6 +13,11 @@ export class ApiClientError extends Error {
 }
 
 function defaultBaseUrl(): string {
+  const viteEnv = (import.meta as any)?.env;
+  if (viteEnv?.DEV) {
+    // In dev, prefer same-origin + Vite proxy to avoid CORS failures.
+    return '';
+  }
   const productionHostname = 'elibrary.pncproject.site';
   const productionBaseUrl = `https://${productionHostname}`;
 

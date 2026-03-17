@@ -2,6 +2,7 @@ import React from 'react';
 import {Icons} from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import CoverImage from '../components/CoverImage';
+import {requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 
 interface DownloadsProps {
   onNavigate: (page: any, data?: any) => void;
@@ -138,7 +139,17 @@ export default function Downloads({onNavigate}: DownloadsProps) {
               <div
                 key={item.bookId}
                 className="group p-4 rounded-2xl bg-surface border border-border hover:border-primary/30 transition-all flex items-center gap-4 cursor-pointer"
-                onClick={() => openOffline(item.bookId).catch(() => onNavigate('book-details', item.book))}
+                onClick={() => {
+                  if (shouldRequireAuthForRead()) {
+                    requestAuth('read-limit');
+                    return;
+                  }
+                  openOffline(item.bookId)
+                    .then(() => {
+                      trackRead(item.bookId);
+                    })
+                    .catch(() => onNavigate('book-details', item.book));
+                }}
                 title="Open offline"
               >
                 <CoverImage src={item.book.cover} alt={item.book.title} className="w-16 h-24 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" />

@@ -9,6 +9,7 @@
 
 ```bash
 VITE_API_BASE_URL="https://elibrary.pncproject.site"
+VITE_API_PROXY_TARGET="http://localhost:8000"
 ```
 
 3. Start dev server: `npm run dev`
