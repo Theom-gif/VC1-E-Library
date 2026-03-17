@@ -22,17 +22,16 @@ function defaultBaseUrl(): string {
     const port = String(globalThis.location.port || '');
 
     const safeProtocol = protocol === 'http:' || protocol === 'https:' ? protocol : 'https:';
+    const origin = `${safeProtocol}//${hostname}${port ? `:${port}` : ''}`;
 
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') {
-      return `${safeProtocol}//${hostname}:8000`;
-    }
+    // In dev (Vite), prefer same-origin so the Vite proxy can forward /api and /storage
+    // without CORS headaches. Override with VITE_API_BASE_URL if your backend is elsewhere.
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') return origin;
 
     if (hostname) {
       if (hostname === productionHostname) return productionBaseUrl;
 
-      if (port && port !== '80' && port !== '443') {
-        return `${safeProtocol}//${hostname}:8000`;
-      }
+      if (port && port !== '80' && port !== '443') return origin;
       return `${safeProtocol}//${hostname}`;
     }
   }
@@ -124,21 +123,33 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
   }
 
   try {
-    const response = await fetch(url, {
-      method,
-      headers,
-      ...(hasBody
-        ? {
-            body: isBinaryBody
-              ? (body as any)
-              : shouldJsonStringifyBody
-                ? JSON.stringify(body)
-                : (body as any),
-          }
-        : {}),
-      signal: combinedSignal,
-      ...restOptions,
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        ...(hasBody
+          ? {
+              body: isBinaryBody
+                ? (body as any)
+                : shouldJsonStringifyBody
+                  ? JSON.stringify(body)
+                  : (body as any),
+            }
+          : {}),
+        signal: combinedSignal,
+        ...restOptions,
+      });
+    } catch (fetchError: any) {
+      const error = new ApiClientError(
+        fetchError?.message ||
+          `Failed to fetch (${method} ${url}). Check VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
+      );
+      error.data = fetchError;
+      error.method = method;
+      error.url = url;
+      throw error;
+    }
 
     const data = await parseResponse(response);
 
