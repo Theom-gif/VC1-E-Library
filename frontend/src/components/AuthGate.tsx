@@ -303,7 +303,7 @@ export default function AuthGate({children}: AuthGateProps) {
       return;
     }
     try {
-      await registerWithFallbacks({
+      const registerResponse = await registerWithFallbacks({
         firstname,
         lastname,
         email,
@@ -311,8 +311,12 @@ export default function AuthGate({children}: AuthGateProps) {
         password_confirmation: registerForm.password_confirmation,
         role: registerForm.role,
       });
-      const response = await loginWithFallbacks({email, password: registerForm.password, role: registerForm.role});
-      const user = toSessionUser(response, email, registerForm.role);
+      let sessionSource = registerResponse;
+      if (!authService.getToken()) {
+        const response = await loginWithFallbacks({email, password: registerForm.password, role: registerForm.role});
+        sessionSource = response;
+      }
+      const user = toSessionUser(sessionSource, email, registerForm.role);
       saveSession(user);
       setAuthRequired(false);
       setSessionUser(user);
