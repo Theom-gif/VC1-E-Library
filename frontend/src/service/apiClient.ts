@@ -23,13 +23,19 @@ function defaultBaseUrl(): string {
 
     const safeProtocol = protocol === 'http:' || protocol === 'https:' ? protocol : 'https:';
     const origin = `${safeProtocol}//${hostname}${port ? `:${port}` : ''}`;
+    const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
 
     // In dev (Vite), prefer same-origin so the Vite proxy can forward /api and /storage
     // without CORS headaches. Override with VITE_API_BASE_URL if your backend is elsewhere.
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') return origin;
+    if ((import.meta as any)?.env?.DEV && isIpv4) return origin;
 
     if (hostname) {
       if (hostname === productionHostname) return productionBaseUrl;
+
+      // If the frontend is hosted on a raw IP in production, it's usually a static host without `/api` routes.
+      // Default to the known backend domain instead of calling the same IP (which would 404).
+      if (!(import.meta as any)?.env?.DEV && isIpv4) return productionBaseUrl;
 
       if (port && port !== '80' && port !== '443') return origin;
       return `${safeProtocol}//${hostname}`;
