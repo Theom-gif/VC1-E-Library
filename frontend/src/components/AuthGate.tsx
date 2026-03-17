@@ -16,7 +16,7 @@ type AuthGateProps = {
 };
 
 const SESSION_KEY = 'elibrary_session';
-const AUTO_LOGIN_BYPASS = true;
+const AUTO_LOGIN_BYPASS = String((import.meta as any)?.env?.VITE_AUTO_LOGIN_BYPASS || '').trim().toLowerCase() === 'true';
 const REGISTER_ROLES: Array<{label: string; role: RoleName; icon: typeof UserIcon}> = [
   {label: 'USER', role: 'user', icon: UserIcon},
   {label: 'AUTHOR', role: 'author', icon: PenTool},

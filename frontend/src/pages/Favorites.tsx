@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Icons, BookType } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
-import {useLibrary} from '../context/LibraryContext';
+import {useFavorites} from '../context/FavoritesContext';
 
 interface FavoritesProps {
   onNavigate: (page: any, data?: any) => void;
@@ -11,21 +11,21 @@ interface FavoritesProps {
 type TabType = 'All Favorites' | 'Recently Added' | 'Reading Progress' | 'Completed';
 
 export default function Favorites({ onNavigate }: FavoritesProps) {
-  const {books} = useLibrary();
+  const {favorites, isLoading, error, refresh} = useFavorites();
   const [activeTab, setActiveTab] = useState<TabType>('All Favorites');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredBooks = useMemo(() => {
-    let items = books;
+    let items = favorites;
 
     // Filter by tab
     if (activeTab === 'Recently Added') {
       // Just showing all for now as we don't have "added date"
-      items = books;
+      items = favorites;
     } else if (activeTab === 'Reading Progress') {
-      items = books.filter(b => (b.progress && b.progress > 0 && b.progress < 100) || b.status === 'Currently Reading');
+      items = favorites.filter(b => (b.progress && b.progress > 0 && b.progress < 100) || b.status === 'Currently Reading');
     } else if (activeTab === 'Completed') {
-      items = books.filter(b => b.status === 'Completed' || b.progress === 100);
+      items = favorites.filter(b => b.status === 'Completed' || b.progress === 100);
     }
 
     // Filter by search
@@ -38,7 +38,7 @@ export default function Favorites({ onNavigate }: FavoritesProps) {
     }
 
     return items;
-  }, [activeTab, searchQuery, books]);
+  }, [activeTab, searchQuery, favorites]);
 
   const tabs: TabType[] = ['All Favorites', 'Recently Added', 'Reading Progress', 'Completed'];
 
@@ -66,6 +66,20 @@ export default function Favorites({ onNavigate }: FavoritesProps) {
           </button>
         </div>
       </div>
+
+      {(isLoading || error) && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface px-4 py-3">
+          <div className="text-sm text-text-muted">
+            {isLoading ? 'Loading favorites...' : error}
+          </div>
+          <button
+            onClick={() => void refresh()}
+            className="text-xs font-bold uppercase tracking-widest text-primary hover:underline"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center gap-4 border-b border-border pb-4 overflow-x-auto no-scrollbar">
         {tabs.map((tab) => (

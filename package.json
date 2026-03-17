@@ -1,0 +1,11 @@
+{
+  "name": "e_library_webiste",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "install:frontend": "npm --prefix frontend install"
+  }
+}
+

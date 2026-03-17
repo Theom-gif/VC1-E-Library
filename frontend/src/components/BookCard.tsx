@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Icons, BookType } from '../types';
 import {useDownloads} from '../context/DownloadContext';
+import {useFavorites} from '../context/FavoritesContext';
 import CoverImage from './CoverImage';
 
 interface BookCardProps {
@@ -13,8 +14,10 @@ interface BookCardProps {
 
 export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps) {
   const {startDownload, resume, openOffline, isDownloaded, activeById} = useDownloads();
+  const {isFavorite, toggle} = useFavorites();
   const downloaded = isDownloaded(String(book.id));
   const active = activeById(String(book.id));
+  const favorite = isFavorite(String(book.id));
 
   return (
     <motion.div 
@@ -46,13 +49,14 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
             <Icons.Download className="size-4" />
           </button>
           <button 
-            className="p-2 rounded-full bg-white text-background-dark shadow-lg hover:scale-110 transition-transform"
+            className={`p-2 rounded-full shadow-lg hover:scale-110 transition-transform ${favorite ? 'bg-rose-500 text-white' : 'bg-white text-background-dark'}`}
             onClick={(e) => {
               e.stopPropagation();
-              // In a real app, this would toggle favorite
+              void toggle(book);
             }}
+            title={favorite ? 'Remove from favorites' : 'Add to favorites'}
           >
-            <Icons.Heart className="size-4" />
+            <Icons.Heart className={`size-4 ${favorite ? 'fill-white' : ''}`} />
           </button>
         </div>
       </div>

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Icons, BookType } from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import {useLibrary} from '../context/LibraryContext';
+import {useFavorites} from '../context/FavoritesContext';
 import bookService from '../service/bookService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
@@ -25,11 +26,13 @@ interface Comment {
 export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const {books} = useLibrary();
   const {startDownload, resume, openOffline, isDownloaded, activeById} = useDownloads();
+  const {isFavorite, toggle} = useFavorites();
   const currentBook = book ?? books[0];
   if (!currentBook) return null;
 
   const active = activeById(String(currentBook.id));
   const downloaded = isDownloaded(String(currentBook.id));
+  const favorite = isFavorite(String(currentBook.id));
   const [commentText, setCommentText] = React.useState('');
   const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
   const [editingText, setEditingText] = React.useState('');
@@ -155,9 +158,15 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     : 'Download'}
             </button>
           </div>
-          <button className="w-full bg-surface text-text border border-border py-3 rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2">
-            <Icons.Heart className="size-4" />
-            Add to Favorites
+          <button
+            onClick={() => {
+              void toggle(currentBook);
+            }}
+            className={`w-full border py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${favorite ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-500/90' : 'bg-surface text-text border-border hover:bg-white/10'}`}
+            title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Icons.Heart className={`size-4 ${favorite ? 'fill-white' : ''}`} />
+            {favorite ? 'Remove from Favorites' : 'Add to Favorites'}
           </button>
         </div>
 

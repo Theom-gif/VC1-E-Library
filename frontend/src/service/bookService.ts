@@ -1,6 +1,7 @@
 import apiClient, {API_BASE_URL} from './apiClient';
 import {withQuery} from './queryString';
 import type {BookType} from '../types';
+import {isApprovedBook, toBookType} from './bookMapper';
 
 export type ApiListMeta = {
   current_page: number;
@@ -30,14 +31,6 @@ function pickString(...values: unknown[]): string {
     if (normalized) return normalized;
   }
   return '';
-}
-
-function pickNumber(...values: unknown[]): number {
-  for (const value of values) {
-    const n = Number(value);
-    if (Number.isFinite(n) && !Number.isNaN(n)) return n;
-  }
-  return 0;
 }
 
 function asAbsoluteAssetUrl(value: string): string {
@@ -81,72 +74,7 @@ function pickUrlFromObject(obj: any): string {
   return asAbsoluteMaybeUrl(direct);
 }
 
-function pickCoverValue(raw: any): string {
-  const direct = pickString(
-    raw?.cover_image_url,
-    raw?.cover_url,
-    raw?.cover,
-    raw?.cover_image,
-    raw?.cover_image_path,
-    raw?.cover_path,
-    raw?.coverImageUrl,
-    raw?.coverImage,
-    raw?.image_url,
-    raw?.image,
-    raw?.thumbnail_url,
-    raw?.thumbnail,
-    raw?.cover_image?.url,
-    raw?.cover_image?.path,
-    raw?.coverImage?.url,
-    raw?.coverImage?.path,
-  );
-
-  return asAbsoluteAssetUrl(direct);
-}
-
-function toBookType(raw: any): BookType {
-  const id = pickString(raw?.id, raw?.book_id, raw?._id, raw?.uuid);
-  const title = pickString(raw?.title, raw?.name);
-  const author = pickString(raw?.author?.name, raw?.author_name, raw?.author);
-  const category = pickString(raw?.category?.name, raw?.category_name, raw?.category, 'Uncategorized');
-  const cover = pickCoverValue(raw);
-
-  return {
-    id: id || `book_${Date.now()}`,
-    title: title || 'Untitled',
-    author: author || 'Unknown',
-    cover: cover || '',
-    category,
-    rating: pickNumber(raw?.rating, raw?.avg_rating, raw?.average_rating),
-    pages: raw?.pages !== undefined ? pickNumber(raw?.pages, raw?.page_count) : undefined,
-    description: pickString(raw?.description, raw?.summary, raw?.about),
-    reviews: raw?.reviews !== undefined ? pickNumber(raw?.reviews, raw?.reviews_count) : undefined,
-  };
-}
-
-function isApprovedBook(raw: any): boolean {
-  const hasApprovalFlag =
-    raw?.is_approved !== undefined ||
-    raw?.approved !== undefined ||
-    raw?.approval_status !== undefined ||
-    raw?.status !== undefined ||
-    raw?.book_status !== undefined;
-
-  if (!hasApprovalFlag) return true;
-
-  const flag = raw?.is_approved ?? raw?.approved;
-  if (typeof flag === 'boolean') return flag;
-  if (typeof flag === 'number') return flag === 1;
-  if (typeof flag === 'string') {
-    const v = flag.trim().toLowerCase();
-    if (!v) return true;
-    return v === '1' || v === 'true' || v === 'approved' || v === 'active' || v === 'published';
-  }
-
-  const status = pickString(raw?.approval_status, raw?.status, raw?.book_status).toLowerCase();
-  if (!status) return true;
-  return status.includes('approved') || status === 'active' || status === 'published';
-}
+// book mapping lives in ./bookMapper
 
 export const bookService = {
   list: async (params?: ListBooksParams) => {
