@@ -82,7 +82,12 @@ function uniqueById(books: BookType[]): BookType[] {
 }
 
 function pickErrorMessage(error: any): string {
-  return error?.data?.message || error?.message || 'Unable to load favorites.';
+  const message = error?.data?.message || error?.message || 'Unable to load favorites.';
+  const method = String(error?.method || '').trim();
+  const url = String(error?.url || '').trim();
+  const status = error?.status !== undefined ? String(error.status).trim() : '';
+  const details = [status && `status ${status}`, method, url].filter(Boolean).join(' ');
+  return details ? `${message} (${details})` : message;
 }
 
 export function FavoritesProvider({children}: {children: React.ReactNode}) {

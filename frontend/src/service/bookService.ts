@@ -25,6 +25,19 @@ export type ListBooksParams = {
   sort?: 'newest' | 'rating' | 'popular';
 };
 
+async function with404Fallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
+  let lastError: any;
+  for (const path of paths) {
+    try {
+      return await fn(path);
+    } catch (error: any) {
+      if (Number(error?.status) !== 404) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Books endpoint not found.');
+}
+
 function pickString(...values: unknown[]): string {
   for (const value of values) {
     const normalized = String(value ?? '').trim();
@@ -83,16 +96,10 @@ export const bookService = {
         headers: {Accept: 'application/json'},
       })) as ApiEnvelope<any>;
 
-    let payload: ApiEnvelope<any>;
-    try {
-      payload = await requestList('/api/books');
-    } catch (error: any) {
-      if (Number(error?.status) === 404) {
-        payload = await requestList('/api/auth/books');
-      } else {
-        throw error;
-      }
-    }
+    const payload = await with404Fallback<ApiEnvelope<any>>(
+      ['/api/books', '/api/auth/books', '/api/reader/books'],
+      requestList,
+    );
 
     const rawList =
       (Array.isArray((payload as any)?.data) && (payload as any).data) ||
@@ -113,9 +120,11 @@ export const bookService = {
   },
 
   getById: async (id: string) => {
-    const payload = (await apiClient.get(`/api/books/${encodeURIComponent(id)}`, {
-      headers: {Accept: 'application/json'},
-    })) as ApiEnvelope<any>;
+    const encodedId = encodeURIComponent(id);
+    const payload = (await with404Fallback<ApiEnvelope<any>>(
+      [`/api/books/${encodedId}`, `/api/auth/books/${encodedId}`, `/api/reader/books/${encodedId}`],
+      (path) => apiClient.get(path, {headers: {Accept: 'application/json'}}) as any,
+    )) as ApiEnvelope<any>;
 
     const rawBook = (payload as any)?.data ?? payload;
     return {
