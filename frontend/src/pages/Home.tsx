@@ -3,11 +3,11 @@ import { Icons } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
 import CoverImage from '../components/CoverImage';
-import {useLibrary} from '../context/LibraryContext';
+import { useLibrary } from '../context/LibraryContext';
 
 interface HomeProps {
   onNavigate: (page: any, data?: any) => void;
-  onLogin?: (payload: {email: string; password: string; role?: 'user' | 'author' | 'admin'}) => Promise<void>;
+  onLogin?: (payload: { email: string; password: string; role?: 'user' | 'author' | 'admin' }) => Promise<void>;
   onRegister?: (payload: {
     firstname: string;
     lastname: string;
@@ -31,12 +31,12 @@ export default function Home({
   onCloseAuthOverlay,
   onAuthSuccess,
 }: HomeProps) {
-  const {books, newArrivals, isLoading, error, source, refresh} = useLibrary();
+  const { books, newArrivals, isLoading, error, source, refresh } = useLibrary();
   const showError = Boolean(error && source !== 'mock');
   const showMock = source === 'mock' && !isLoading;
   const canShowAuthOverlay = Boolean(showAuthOverlay && onLogin && onRegister);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [loginForm, setLoginForm] = useState({email: '', password: ''});
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     firstname: '',
     lastname: '',
@@ -73,7 +73,7 @@ export default function Home({
         password: loginForm.password,
         role: 'user',
       });
-      setLoginForm({email: '', password: ''});
+      setLoginForm({ email: '', password: '' });
       onAuthSuccess?.();
     } catch (err: any) {
       setAuthError(getAuthError(err));
@@ -125,9 +125,8 @@ export default function Home({
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-16">
       {(isLoading || showError || showMock) && (
         <div
-          className={`rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
-            showError ? 'bg-red-500/10 border-red-500/20' : showMock ? 'bg-orange-500/10 border-orange-500/20' : 'bg-surface border-border'
-          }`}
+          className={`rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${showError ? 'bg-red-500/10 border-red-500/20' : showMock ? 'bg-orange-500/10 border-orange-500/20' : 'bg-surface border-border'
+            }`}
         >
           <div className="text-sm">
             {isLoading ? (
@@ -194,9 +193,8 @@ export default function Home({
                   setAuthMode('login');
                   setAuthError('');
                 }}
-                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
-                  authMode === 'login' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
-                }`}
+                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${authMode === 'login' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
+                  }`}
               >
                 Login
               </button>
@@ -206,9 +204,8 @@ export default function Home({
                   setAuthMode('register');
                   setAuthError('');
                 }}
-                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
-                  authMode === 'register' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
-                }`}
+                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${authMode === 'register' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
+                  }`}
               >
                 Register
               </button>
@@ -222,7 +219,7 @@ export default function Home({
                     type="email"
                     value={loginForm.email}
                     onChange={(event) => {
-                      setLoginForm((prev) => ({...prev, email: event.target.value}));
+                      setLoginForm((prev) => ({ ...prev, email: event.target.value }));
                       setAuthError('');
                     }}
                     placeholder="you@example.com"
@@ -236,7 +233,7 @@ export default function Home({
                     type="password"
                     value={loginForm.password}
                     onChange={(event) => {
-                      setLoginForm((prev) => ({...prev, password: event.target.value}));
+                      setLoginForm((prev) => ({ ...prev, password: event.target.value }));
                       setAuthError('');
                     }}
                     placeholder="********"
@@ -266,7 +263,7 @@ export default function Home({
                       type="text"
                       value={registerForm.firstname}
                       onChange={(event) => {
-                        setRegisterForm((prev) => ({...prev, firstname: event.target.value}));
+                        setRegisterForm((prev) => ({ ...prev, firstname: event.target.value }));
                         setAuthError('');
                       }}
                       required
@@ -279,7 +276,7 @@ export default function Home({
                       type="text"
                       value={registerForm.lastname}
                       onChange={(event) => {
-                        setRegisterForm((prev) => ({...prev, lastname: event.target.value}));
+                        setRegisterForm((prev) => ({ ...prev, lastname: event.target.value }));
                         setAuthError('');
                       }}
                       required
@@ -293,7 +290,7 @@ export default function Home({
                     type="email"
                     value={registerForm.email}
                     onChange={(event) => {
-                      setRegisterForm((prev) => ({...prev, email: event.target.value}));
+                      setRegisterForm((prev) => ({ ...prev, email: event.target.value }));
                       setAuthError('');
                     }}
                     required
@@ -307,7 +304,7 @@ export default function Home({
                       type="password"
                       value={registerForm.password}
                       onChange={(event) => {
-                        setRegisterForm((prev) => ({...prev, password: event.target.value}));
+                        setRegisterForm((prev) => ({ ...prev, password: event.target.value }));
                         setAuthError('');
                       }}
                       required
@@ -320,7 +317,7 @@ export default function Home({
                       type="password"
                       value={registerForm.password_confirmation}
                       onChange={(event) => {
-                        setRegisterForm((prev) => ({...prev, password_confirmation: event.target.value}));
+                        setRegisterForm((prev) => ({ ...prev, password_confirmation: event.target.value }));
                         setAuthError('');
                       }}
                       required
@@ -351,16 +348,17 @@ export default function Home({
         <div className="relative z-10 max-w-2xl space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-wider">
             <Icons.Rocket className="size-3" />
-            <span>New Feature: AI Book Summaries</span>
+            <span>Knowledge, Anywhere</span>
           </div>
-          <h1 className="text-4xl md:text-6xl font-bold leading-[1.1] tracking-tight text-text">
-            Your Personal <span className="text-primary">Sanctuary</span> of Knowledge
+          <h1 className="text-4xl md:text-5xl font-bold leading-[1.1] tracking-tight text-text">
+            Your Smart Digital Library for  <span className="text-primary"> Unlimited</span> Learning
           </h1>
           <p className="text-lg text-text-muted leading-relaxed max-w-lg">
-            Explore over 50,000 digital books, audiobooks, and magazines. Track your reading journey and discover your next favorite story.
+            Access thousands of books, audiobooks, and learning resources anytime, anywhere.
+            Build your reading habits, explore new ideas, and grow your knowledge every day.
           </p>
           <div className="flex flex-wrap gap-4 pt-4">
-            <button 
+            <button
               onClick={() => onNavigate('categories')}
               className="bg-primary text-white px-8 py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
             >
@@ -410,7 +408,7 @@ export default function Home({
                       <span className="text-primary">{progress}%</span>
                     </div>
                     <div className="h-1.5 w-full bg-surface rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full" style={{width: `${progress}%`}} />
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${progress}%` }} />
                     </div>
                     {timeLeft ? <p className="text-[10px] text-text-muted italic">{timeLeft}</p> : null}
                   </div>
@@ -441,10 +439,10 @@ export default function Home({
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
           {newArrivals.map((book) => (
-            <BookCard 
-              key={book.id} 
-              book={book} 
-              onClick={() => onNavigate('book-details', book)} 
+            <BookCard
+              key={book.id}
+              book={book}
+              onClick={() => onNavigate('book-details', book)}
               onAuthorClick={(author) => onNavigate('author-details', author)}
             />
           ))}
@@ -465,7 +463,7 @@ export default function Home({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {books.slice(3, 5).map((book) => (
-              <div 
+              <div
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
                 className="relative h-48 rounded-2xl overflow-hidden group cursor-pointer"
@@ -490,7 +488,7 @@ export default function Home({
           </div>
           <div className="space-y-4">
             {books.slice(0, 4).map((book, i) => (
-              <div 
+              <div
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
                 className="flex items-center gap-4 group cursor-pointer"
