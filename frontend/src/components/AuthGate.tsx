@@ -1,7 +1,7 @@
 import {FormEvent, ReactNode, useState} from 'react';
 import {ArrowRight, BookOpen, Eye, EyeOff, Lock, Mail, PenTool, Shield, User as UserIcon} from 'lucide-react';
 import authService from '../service/authService';
-import {isAuthRequired, setAuthRequired} from '../utils/readerUpgrade';
+import {isAuthRequired, setAuthRequired, setMembershipTier} from '../utils/readerUpgrade';
 
 type RoleName = 'user' | 'author' | 'admin';
 
@@ -13,7 +13,19 @@ type SessionUser = {
 };
 
 type AuthGateProps = {
-  children: (props: {user: SessionUser; logout: () => void}) => ReactNode;
+  children: (props: {
+    user: SessionUser;
+    logout: () => void;
+    login: (payload: {email: string; password: string; role?: RoleName}) => Promise<void>;
+    register: (payload: {
+      firstname: string;
+      lastname: string;
+      email: string;
+      password: string;
+      password_confirmation: string;
+      role: RoleName;
+    }) => Promise<void>;
+  }) => ReactNode;
 };
 
 const SESSION_KEY = 'elibrary_session';
@@ -251,8 +263,51 @@ export default function AuthGate({children}: AuthGateProps) {
     }
     authService.clearToken();
     clearSession();
+    setMembershipTier('normal');
     setAuthRequired(true);
     setSessionUser(null);
+  };
+
+  const login = async (payload: {email: string; password: string; role?: RoleName}) => {
+    const response = await loginWithFallbacks({
+      email: payload.email.trim().toLowerCase(),
+      password: payload.password,
+      role: payload.role,
+    });
+    const user = toSessionUser(response, payload.email, payload.role ?? 'user');
+    saveSession(user);
+    setAuthRequired(false);
+    setSessionUser(user);
+    if ((payload.role ?? 'user') === 'user') {
+      setMembershipTier('reader');
+    }
+  };
+
+  const register = async (payload: {
+    firstname: string;
+    lastname: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+    role: RoleName;
+  }) => {
+    const response = await registerWithFallbacks(payload);
+    let sessionSource = response;
+    if (!authService.getToken()) {
+      const loginResponse = await loginWithFallbacks({
+        email: payload.email.trim().toLowerCase(),
+        password: payload.password,
+        role: payload.role,
+      });
+      sessionSource = loginResponse;
+    }
+    const user = toSessionUser(sessionSource, payload.email, payload.role);
+    saveSession(user);
+    setAuthRequired(false);
+    setSessionUser(user);
+    if (payload.role === 'user') {
+      setMembershipTier('reader');
+    }
   };
 
   const onLogin = async (event: FormEvent<HTMLFormElement>) => {
@@ -260,15 +315,11 @@ export default function AuthGate({children}: AuthGateProps) {
     setIsSubmitting(true);
     setError('');
     try {
-      const response = await loginWithFallbacks({
-        email: loginForm.email.trim().toLowerCase(),
+      await login({
+        email: loginForm.email,
         password: loginForm.password,
         role: loginForm.role,
       });
-      const user = toSessionUser(response, loginForm.email, loginForm.role);
-      saveSession(user);
-      setAuthRequired(false);
-      setSessionUser(user);
     } catch (requestError: any) {
       setError(extractErrorText(requestError, 'Unable to login. Please check your credentials.'));
     } finally {
@@ -299,7 +350,7 @@ export default function AuthGate({children}: AuthGateProps) {
       return;
     }
     try {
-      const registerResponse = await registerWithFallbacks({
+      await register({
         firstname,
         lastname,
         email,
@@ -307,15 +358,6 @@ export default function AuthGate({children}: AuthGateProps) {
         password_confirmation: registerForm.password_confirmation,
         role: registerForm.role,
       });
-      let sessionSource = registerResponse;
-      if (!authService.getToken()) {
-        const response = await loginWithFallbacks({email, password: registerForm.password, role: registerForm.role});
-        sessionSource = response;
-      }
-      const user = toSessionUser(sessionSource, email, registerForm.role);
-      saveSession(user);
-      setAuthRequired(false);
-      setSessionUser(user);
     } catch (requestError: any) {
       setError(extractErrorText(requestError, 'Unable to register. Please try again.'));
     } finally {
@@ -323,7 +365,7 @@ export default function AuthGate({children}: AuthGateProps) {
     }
   };
 
-  if (sessionUser) return <>{children({user: sessionUser, logout})}</>;
+  if (sessionUser) return <>{children({user: sessionUser, logout, login, register})}</>;
 
   if (mode === 'register') {
     return (

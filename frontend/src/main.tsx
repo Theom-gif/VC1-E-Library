@@ -10,11 +10,11 @@ import './index.css';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthGate>
-      {({user, logout}) => (
+      {({user, logout, login, register}) => (
         <LibraryProvider>
           <FavoritesProvider>
             <DownloadProvider>
-              <App authUser={user} onLogout={logout} />
+              <App authUser={user} onLogout={logout} onLogin={login} onRegister={register} />
             </DownloadProvider>
           </FavoritesProvider>
         </LibraryProvider>

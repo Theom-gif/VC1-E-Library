@@ -23,7 +23,6 @@ import {
   isGuestSession,
   MEMBERSHIP_TIER_EVENT,
   MembershipTier,
-  setAuthRequired,
 } from './utils/readerUpgrade';
 
 type Page =
@@ -49,14 +48,24 @@ type AuthenticatedUser = {
 type AppProps = {
   authUser: AuthenticatedUser;
   onLogout: () => void;
+  onLogin: (payload: {email: string; password: string; role?: AuthenticatedUser['role']}) => Promise<void>;
+  onRegister: (payload: {
+    firstname: string;
+    lastname: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+    role: AuthenticatedUser['role'];
+  }) => Promise<void>;
 };
 
-export default function App({ authUser, onLogout }: AppProps) {
+export default function App({ authUser, onLogout, onLogin, onRegister }: AppProps) {
   const {books, newArrivals} = useLibrary();
   const [membershipTier, setMembershipTier] = useState<MembershipTier>(() => getMembershipTier());
   const [showAccessPrompt, setShowAccessPrompt] = useState(false);
   const [pendingNav, setPendingNav] = useState<{page: Page; data?: any} | null>(null);
   const [accessPromptReason, setAccessPromptReason] = useState<'feature' | 'read-limit'>('feature');
+  const [showHomeAuthOverlay, setShowHomeAuthOverlay] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -140,10 +149,19 @@ export default function App({ authUser, onLogout }: AppProps) {
   }, []);
 
   const handleAuthRedirect = () => {
-    setAuthRequired(true);
     setShowAccessPrompt(false);
+    setShowHomeAuthOverlay(true);
+    setCurrentPage('home');
+    window.scrollTo(0, 0);
+  };
+
+  const handleHomeAuthSuccess = () => {
+    setShowHomeAuthOverlay(false);
+    const next = pendingNav;
     setPendingNav(null);
-    onLogout();
+    if (next) {
+      navigateTo(next.page, next.data);
+    }
   };
 
   const notifications = [
@@ -219,13 +237,25 @@ export default function App({ authUser, onLogout }: AppProps) {
   const quickResults = filteredBooks.slice(0, 6);
   const handleLogout = () => {
     onLogout();
+    setShowHomeAuthOverlay(false);
     setCurrentPage('home');
     window.scrollTo(0, 0);
   };
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'home': return <Home onNavigate={navigateTo} />;
+      case 'home':
+        return (
+          <Home
+            onNavigate={navigateTo}
+            onLogin={onLogin}
+            onRegister={onRegister}
+            showAuthOverlay={showHomeAuthOverlay && authUser?.id === 'guest'}
+            authOverlayReason={accessPromptReason}
+            onCloseAuthOverlay={() => setShowHomeAuthOverlay(false)}
+            onAuthSuccess={handleHomeAuthSuccess}
+          />
+        );
       case 'categories': return <Categories onNavigate={navigateTo} />;
       case 'favorites': return <Favorites onNavigate={navigateTo} />;
       case 'downloads': return <Downloads onNavigate={navigateTo} />;
@@ -236,7 +266,18 @@ export default function App({ authUser, onLogout }: AppProps) {
       case 'author-details': return <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
       case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
       case 'logout': return <Logout onLogout={handleLogout} onNavigate={navigateTo} />;
-      default: return <Home onNavigate={navigateTo} />;
+      default:
+        return (
+          <Home
+            onNavigate={navigateTo}
+            onLogin={onLogin}
+            onRegister={onRegister}
+            showAuthOverlay={showHomeAuthOverlay && authUser?.id === 'guest'}
+            authOverlayReason={accessPromptReason}
+            onCloseAuthOverlay={() => setShowHomeAuthOverlay(false)}
+            onAuthSuccess={handleHomeAuthSuccess}
+          />
+        );
     }
   };
 
@@ -383,7 +424,7 @@ export default function App({ authUser, onLogout }: AppProps) {
                 onClick={() => navigateTo('profile')}
               />
               <button
-                onClick={onLogout}
+                onClick={() => navigateTo('logout')}
                 className="hidden sm:block rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
               >
                 Logout
