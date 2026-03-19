@@ -17,6 +17,7 @@ type AuthGateProps = {
 };
 
 const SESSION_KEY = 'elibrary_session';
+const LOGOUT_TOKEN_KEY = 'elibrary_last_token';
 const AUTO_LOGIN_BYPASS = String((import.meta as any)?.env?.VITE_AUTO_LOGIN_BYPASS || '').trim().toLowerCase() === 'true';
 const ALLOW_GUEST = String((import.meta as any)?.env?.VITE_ALLOW_GUEST ?? 'true').trim().toLowerCase() !== 'false';
 const REGISTER_ROLES: Array<{label: string; role: RoleName; icon: typeof UserIcon}> = [
@@ -244,18 +245,13 @@ export default function AuthGate({children}: AuthGateProps) {
   });
 
   const logout = () => {
+    const token = authService.getToken();
+    if (token) {
+      safeLocalStorageSet(LOGOUT_TOKEN_KEY, token);
+    }
     authService.clearToken();
     clearSession();
-    if (isAuthRequired()) {
-      setSessionUser(null);
-      return;
-    }
-    if (AUTO_LOGIN_BYPASS || ALLOW_GUEST) {
-      const guest = createGuestSession();
-      saveSession(guest);
-      setSessionUser(guest);
-      return;
-    }
+    setAuthRequired(true);
     setSessionUser(null);
   };
 
