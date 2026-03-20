@@ -1,36 +1,73 @@
 import React from 'react';
-import { Icons, BookType } from '../types';
-import { motion } from 'motion/react';
+import {Icons} from '../types';
+import {motion} from 'motion/react';
 import {useLibrary} from '../context/LibraryContext';
 import CoverImage from '../components/CoverImage';
 
 interface ProfileProps {
-  user: { name: string, photo: string, membership: string };
+  user: {name: string; photo: string; membership: string; memberSince?: string};
   onUpdateUser: (user: any) => void;
   onNavigate: (page: any, data?: any) => void;
 }
 
-export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps) {
+function formatMemberSince(value?: string): string {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleDateString(undefined, {year: 'numeric', month: 'long', day: 'numeric'});
+}
+
+export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) {
   const {books} = useLibrary();
   const [isEditing, setIsEditing] = React.useState(false);
   const [editName, setEditName] = React.useState(user.name);
   const [editPhoto, setEditPhoto] = React.useState(user.photo);
+  const [photoError, setPhotoError] = React.useState('');
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    setEditName(user.name);
+    setEditPhoto(user.photo);
+  }, [user.name, user.photo]);
+
+  const memberSinceText = formatMemberSince(user.memberSince);
 
   const handleSave = () => {
-    onUpdateUser({ ...user, name: editName, photo: editPhoto });
+    onUpdateUser({...user, name: editName, photo: editPhoto});
+    setPhotoError('');
     setIsEditing(false);
+  };
+
+  const handlePhotoPick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Please choose an image file.');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setEditPhoto(String(reader.result || ''));
+      setPhotoError('');
+    };
+    reader.onerror = () => {
+      setPhotoError('Unable to load this image.');
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-12">
-      {/* Profile Header */}
       <section className="relative rounded-3xl overflow-hidden bg-surface border border-border p-8 md:p-12">
         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-r from-primary/30 via-bg to-primary/30 opacity-50" />
         <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-8">
           <div className="relative group">
-            <div 
+            <div
               className="size-32 rounded-3xl bg-primary/20 bg-cover bg-center border-4 border-bg shadow-2xl overflow-hidden"
-              style={{ backgroundImage: `url('${isEditing ? editPhoto : user.photo}')` }}
+              style={{backgroundImage: `url('${isEditing ? editPhoto : user.photo}')`}}
             >
               {isEditing && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
@@ -47,27 +84,43 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
               <div className="space-y-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Full Name</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     className="w-full md:w-64 bg-surface border border-border rounded-xl px-4 py-2 text-text focus:ring-primary focus:border-primary outline-none"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Photo URL</label>
-                  <input 
-                    type="text" 
-                    value={editPhoto}
-                    onChange={(e) => setEditPhoto(e.target.value)}
-                    className="w-full md:w-96 bg-surface border border-border rounded-xl px-4 py-2 text-text text-xs focus:ring-primary focus:border-primary outline-none"
-                  />
+                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Profile Photo</label>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoPick}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-bold text-text hover:bg-white/10 transition-all"
+                    >
+                      Choose From Files
+                    </button>
+                    <p className="text-xs text-text-muted">Select a photo from your device.</p>
+                  </div>
+                  {photoError ? <p className="text-xs text-red-400">{photoError}</p> : null}
                 </div>
               </div>
             ) : (
               <>
                 <h1 className="text-3xl font-bold text-text">{user.name}</h1>
-                <p className="text-text-muted">Passionate reader & Sci-Fi enthusiast • Member since 2022</p>
+                <p className="text-text-muted">
+                  {memberSinceText
+                    ? `Passionate reader & Sci-Fi enthusiast • Member since ${memberSinceText}`
+                    : 'Passionate reader & Sci-Fi enthusiast'}
+                </p>
               </>
             )}
             <div className="flex flex-wrap justify-center md:justify-start gap-4 pt-2">
@@ -79,13 +132,13 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
           <div className="flex gap-3">
             {isEditing ? (
               <>
-                <button 
+                <button
                   onClick={() => setIsEditing(false)}
                   className="px-6 py-2 rounded-xl font-bold text-text-muted hover:text-text transition-all"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={handleSave}
                   className="bg-primary text-white px-8 py-2 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
                 >
@@ -94,7 +147,7 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
               </>
             ) : (
               <>
-                <button 
+                <button
                   onClick={() => setIsEditing(true)}
                   className="bg-primary text-white px-6 py-2 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
                 >
@@ -116,7 +169,6 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-        {/* Left Column: Activity & Stats */}
         <div className="lg:col-span-2 space-y-12">
           <section className="space-y-6">
             <div className="flex items-center justify-between">
@@ -131,10 +183,10 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
               {[45, 80, 30, 95, 60, 40, 75].map((val, i) => (
                 <div key={i} className="flex-1 flex flex-col items-center gap-3 h-full justify-end">
                   <div className="w-full bg-primary/5 rounded-t-lg flex-1 flex items-end overflow-hidden">
-                    <motion.div 
-                      initial={{ height: 0 }}
-                      animate={{ height: `${val}%` }}
-                      transition={{ duration: 1, delay: i * 0.1, ease: "easeOut" }}
+                    <motion.div
+                      initial={{height: 0}}
+                      animate={{height: `${val}%`}}
+                      transition={{duration: 1, delay: i * 0.1, ease: 'easeOut'}}
                       className="w-full bg-gradient-to-t from-primary/40 to-primary rounded-t-lg relative group cursor-pointer"
                     >
                       <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -155,7 +207,7 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
             <h3 className="text-xl font-bold text-text">Currently Reading</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {books.slice(0, 2).map((book) => (
-                <div 
+                <div
                   key={book.id}
                   onClick={() => onNavigate('book-details', book)}
                   className="p-4 rounded-2xl bg-surface border border-border flex gap-4 cursor-pointer group hover:border-primary/30 transition-all"
@@ -172,7 +224,7 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
                         <span className="text-primary">{book.progress}%</span>
                       </div>
                       <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: `${book.progress}%` }} />
+                        <div className="h-full bg-primary" style={{width: `${book.progress}%`}} />
                       </div>
                     </div>
                   </div>
@@ -182,7 +234,6 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
           </section>
         </div>
 
-        {/* Right Column: Achievements & Friends */}
         <div className="space-y-12">
           <section className="space-y-6">
             <h3 className="text-xl font-bold text-text">Achievements</h3>
@@ -224,7 +275,7 @@ export default function Profile({ user, onUpdateUser, onNavigate }: ProfileProps
   );
 }
 
-function StatBadge({ label, value, icon }: { label: string, value: string, icon: React.ReactNode }) {
+function StatBadge({label, value, icon}: {label: string; value: string; icon: React.ReactNode}) {
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface border border-border">
       <div className="text-primary">{icon}</div>
@@ -236,7 +287,7 @@ function StatBadge({ label, value, icon }: { label: string, value: string, icon:
   );
 }
 
-function Achievement({ icon, label }: { icon: React.ReactNode, label: string }) {
+function Achievement({icon, label}: {icon: React.ReactNode; label: string}) {
   return (
     <div className="aspect-square rounded-2xl bg-surface border border-border flex flex-col items-center justify-center gap-2 group hover:border-primary/30 transition-all cursor-pointer">
       <div className="size-8 rounded-full bg-surface flex items-center justify-center transition-transform group-hover:scale-110">

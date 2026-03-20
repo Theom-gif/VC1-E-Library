@@ -1,36 +1,145 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Icons } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
 import CoverImage from '../components/CoverImage';
-import {useLibrary} from '../context/LibraryContext';
+import { useLibrary } from '../context/LibraryContext';
 
 interface HomeProps {
   onNavigate: (page: any, data?: any) => void;
+  onLogin?: (payload: { email: string; password: string; role?: 'user' | 'author' | 'admin' }) => Promise<void>;
+  onRegister?: (payload: {
+    firstname: string;
+    lastname: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+    role: 'user' | 'author' | 'admin';
+  }) => Promise<void>;
+  showAuthOverlay?: boolean;
+  authOverlayReason?: 'read-limit' | 'feature';
+  onCloseAuthOverlay?: () => void;
+  onAuthSuccess?: () => void;
 }
 
-export default function Home({ onNavigate }: HomeProps) {
-  const {books, newArrivals, isLoading, error, source, refresh} = useLibrary();
+export default function Home({
+  onNavigate,
+  onLogin,
+  onRegister,
+  showAuthOverlay,
+  authOverlayReason,
+  onCloseAuthOverlay,
+  onAuthSuccess,
+}: HomeProps) {
+  const { books, newArrivals, isLoading, error, source, refresh } = useLibrary();
+  const showError = Boolean(error && !isLoading);
+  const showMock = source === 'mock' && !isLoading && !error;
+  const canShowAuthOverlay = Boolean(showAuthOverlay && onLogin && onRegister);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({
+    firstname: '',
+    lastname: '',
+    email: '',
+    password: '',
+    password_confirmation: '',
+  });
+  const [authError, setAuthError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  React.useEffect(() => {
+    if (canShowAuthOverlay) {
+      setAuthMode('login');
+      setAuthError('');
+    }
+  }, [canShowAuthOverlay]);
+
+  const getAuthError = (err: any) => {
+    if (!err) return 'Unable to login. Please check your credentials.';
+    if (typeof err === 'string') return err;
+    if (err?.data?.message) return String(err.data.message);
+    if (err?.message) return String(err.message);
+    return 'Unable to login. Please check your credentials.';
+  };
+
+  const handleLoginSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!onLogin) return;
+    setIsSubmitting(true);
+    setAuthError('');
+    try {
+      await onLogin({
+        email: loginForm.email,
+        password: loginForm.password,
+        role: 'user',
+      });
+      setLoginForm({ email: '', password: '' });
+      onAuthSuccess?.();
+    } catch (err: any) {
+      setAuthError(getAuthError(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!onRegister) return;
+    const firstname = registerForm.firstname.trim();
+    const lastname = registerForm.lastname.trim();
+    const email = registerForm.email.trim().toLowerCase();
+    if (firstname.length < 2 || lastname.length < 2) {
+      setAuthError('First name and last name must each be at least 2 characters.');
+      return;
+    }
+    if (registerForm.password !== registerForm.password_confirmation) {
+      setAuthError('Password confirmation does not match.');
+      return;
+    }
+    setIsSubmitting(true);
+    setAuthError('');
+    try {
+      await onRegister({
+        firstname,
+        lastname,
+        email,
+        password: registerForm.password,
+        password_confirmation: registerForm.password_confirmation,
+        role: 'user',
+      });
+      setRegisterForm({
+        firstname: '',
+        lastname: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+      });
+      onAuthSuccess?.();
+    } catch (err: any) {
+      setAuthError(getAuthError(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-16">
-      {(isLoading || error || source === 'mock') && (
+      {(isLoading || showError || showMock) && (
         <div
-          className={`rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
-            error ? 'bg-red-500/10 border-red-500/20' : source === 'mock' ? 'bg-orange-500/10 border-orange-500/20' : 'bg-surface border-border'
-          }`}
+          className={`rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${showError ? 'bg-red-500/10 border-red-500/20' : showMock ? 'bg-orange-500/10 border-orange-500/20' : 'bg-surface border-border'
+            }`}
         >
           <div className="text-sm">
             {isLoading ? (
               <span className="font-semibold text-text">Loading books from backend…</span>
-            ) : error ? (
-              <>
-                <span className="font-semibold text-text">Backend not reachable.</span>{' '}
-                <span className="text-text-muted">{error}</span>
-              </>
-            ) : source === 'mock' ? (
+            ) : showMock ? (
               <>
                 <span className="font-semibold text-text">Showing mock data.</span>{' '}
                 <span className="text-text-muted">Connect `VITE_API_BASE_URL` to load real books.</span>
+              </>
+            ) : showError ? (
+              <>
+                <span className="font-semibold text-text">Backend request failed.</span>{' '}
+                <span className="text-text-muted">{error}</span>
               </>
             ) : null}
           </div>
@@ -47,21 +156,209 @@ export default function Home({ onNavigate }: HomeProps) {
         </div>
       )}
 
+      {canShowAuthOverlay && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4 backdrop-blur-md">
+          <div className="w-full max-w-2xl rounded-3xl border border-border bg-bg/90 p-6 md:p-8 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-primary">
+                  <Icons.User className="size-3" />
+                  Reader Access Required
+                </div>
+                <h2 className="mt-4 text-2xl md:text-3xl font-bold text-text">
+                  {authOverlayReason === 'read-limit' ? 'Reading limit reached' : 'Reader access required'}
+                </h2>
+                <p className="mt-2 text-sm text-text-muted">
+                  {authOverlayReason === 'read-limit'
+                    ? 'You have reached the free reading limit. Login or register as a Reader to continue.'
+                    : 'Please login or register as a Reader to unlock this feature.'}
+                </p>
+              </div>
+              {onCloseAuthOverlay ? (
+                <button
+                  type="button"
+                  onClick={onCloseAuthOverlay}
+                  className="rounded-lg border border-border bg-surface px-2 py-2 text-text-muted hover:text-text transition-colors"
+                  aria-label="Close"
+                >
+                  <Icons.X className="size-4" />
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mt-6 flex gap-2 rounded-2xl bg-surface p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError('');
+                }}
+                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${authMode === 'login' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
+                  }`}
+              >
+                Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('register');
+                  setAuthError('');
+                }}
+                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${authMode === 'register' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
+                  }`}
+              >
+                Register
+              </button>
+            </div>
+
+            {authMode === 'login' ? (
+              <form onSubmit={handleLoginSubmit} className="mt-6 grid gap-4">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Library Email</label>
+                  <input
+                    type="email"
+                    value={loginForm.email}
+                    onChange={(event) => {
+                      setLoginForm((prev) => ({ ...prev, email: event.target.value }));
+                      setAuthError('');
+                    }}
+                    placeholder="you@example.com"
+                    required
+                    className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Password</label>
+                  <input
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(event) => {
+                      setLoginForm((prev) => ({ ...prev, password: event.target.value }));
+                      setAuthError('');
+                    }}
+                    placeholder="********"
+                    required
+                    className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                  />
+                </div>
+                {authError && (
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">
+                    {authError}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {isSubmitting ? 'Signing in...' : 'Sign In as Reader'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleRegisterSubmit} className="mt-6 grid gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">First Name</label>
+                    <input
+                      type="text"
+                      value={registerForm.firstname}
+                      onChange={(event) => {
+                        setRegisterForm((prev) => ({ ...prev, firstname: event.target.value }));
+                        setAuthError('');
+                      }}
+                      required
+                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Last Name</label>
+                    <input
+                      type="text"
+                      value={registerForm.lastname}
+                      onChange={(event) => {
+                        setRegisterForm((prev) => ({ ...prev, lastname: event.target.value }));
+                        setAuthError('');
+                      }}
+                      required
+                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Library Email</label>
+                  <input
+                    type="email"
+                    value={registerForm.email}
+                    onChange={(event) => {
+                      setRegisterForm((prev) => ({ ...prev, email: event.target.value }));
+                      setAuthError('');
+                    }}
+                    required
+                    className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Password</label>
+                    <input
+                      type="password"
+                      value={registerForm.password}
+                      onChange={(event) => {
+                        setRegisterForm((prev) => ({ ...prev, password: event.target.value }));
+                        setAuthError('');
+                      }}
+                      required
+                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Confirm Password</label>
+                    <input
+                      type="password"
+                      value={registerForm.password_confirmation}
+                      onChange={(event) => {
+                        setRegisterForm((prev) => ({ ...prev, password_confirmation: event.target.value }));
+                        setAuthError('');
+                      }}
+                      required
+                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+                {authError && (
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">
+                    {authError}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {isSubmitting ? 'Creating account...' : 'Register as Reader'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Hero Section */}
       <section className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-primary/20 via-bg to-bg border border-border p-8 md:p-16">
         <div className="relative z-10 max-w-2xl space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-wider">
             <Icons.Rocket className="size-3" />
-            <span>New Feature: AI Book Summaries</span>
+            <span>Knowledge, Anywhere</span>
           </div>
-          <h1 className="text-4xl md:text-6xl font-bold leading-[1.1] tracking-tight text-text">
-            Your Personal <span className="text-primary">Sanctuary</span> of Knowledge
+          <h1 className="text-4xl md:text-5xl font-bold leading-[1.1] tracking-tight text-text">
+            Your Smart Digital Library for  <span className="text-primary"> Unlimited</span> Learning
           </h1>
           <p className="text-lg text-text-muted leading-relaxed max-w-lg">
-            Explore over 50,000 digital books, audiobooks, and magazines. Track your reading journey and discover your next favorite story.
+            Access thousands of books, audiobooks, and learning resources anytime, anywhere.
+            Build your reading habits, explore new ideas, and grow your knowledge every day.
           </p>
           <div className="flex flex-wrap gap-4 pt-4">
-            <button 
+            <button
               onClick={() => onNavigate('categories')}
               className="bg-primary text-white px-8 py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
             >
@@ -111,7 +408,7 @@ export default function Home({ onNavigate }: HomeProps) {
                       <span className="text-primary">{progress}%</span>
                     </div>
                     <div className="h-1.5 w-full bg-surface rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full" style={{width: `${progress}%`}} />
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${progress}%` }} />
                     </div>
                     {timeLeft ? <p className="text-[10px] text-text-muted italic">{timeLeft}</p> : null}
                   </div>
@@ -142,10 +439,10 @@ export default function Home({ onNavigate }: HomeProps) {
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
           {newArrivals.map((book) => (
-            <BookCard 
-              key={book.id} 
-              book={book} 
-              onClick={() => onNavigate('book-details', book)} 
+            <BookCard
+              key={book.id}
+              book={book}
+              onClick={() => onNavigate('book-details', book)}
               onAuthorClick={(author) => onNavigate('author-details', author)}
             />
           ))}
@@ -166,7 +463,7 @@ export default function Home({ onNavigate }: HomeProps) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {books.slice(3, 5).map((book) => (
-              <div 
+              <div
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
                 className="relative h-48 rounded-2xl overflow-hidden group cursor-pointer"
@@ -191,7 +488,7 @@ export default function Home({ onNavigate }: HomeProps) {
           </div>
           <div className="space-y-4">
             {books.slice(0, 4).map((book, i) => (
-              <div 
+              <div
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
                 className="flex items-center gap-4 group cursor-pointer"

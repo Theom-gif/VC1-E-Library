@@ -16,6 +16,12 @@ import NotificationsPage from './pages/Notifications';
 import Logout from './pages/Logout';
 import SearchPage from './pages/Search';
 import CoverImage from './components/CoverImage';
+import {
+  AUTH_REQUIRED_EVENT,
+  getMembershipTier,
+  MEMBERSHIP_TIER_EVENT,
+  MembershipTier,
+} from './utils/readerUpgrade';
 
 type Page =
   | 'home'
@@ -35,15 +41,30 @@ type AuthenticatedUser = {
   name: string;
   email: string;
   role: 'user' | 'author' | 'admin';
+  memberSince?: string;
 };
 
 type AppProps = {
   authUser: AuthenticatedUser;
   onLogout: () => void;
+  onLogin: (payload: {email: string; password: string; role?: AuthenticatedUser['role']}) => Promise<void>;
+  onRegister: (payload: {
+    firstname: string;
+    lastname: string;
+    email: string;
+    password: string;
+    password_confirmation: string;
+    role: AuthenticatedUser['role'];
+  }) => Promise<void>;
 };
 
-export default function App({ authUser, onLogout }: AppProps) {
+export default function App({ authUser, onLogout, onLogin, onRegister }: AppProps) {
   const {books, newArrivals} = useLibrary();
+  const [membershipTier, setMembershipTier] = useState<MembershipTier>(() => getMembershipTier());
+  const [showAccessPrompt, setShowAccessPrompt] = useState(false);
+  const [pendingNav, setPendingNav] = useState<{page: Page; data?: any} | null>(null);
+  const [accessPromptReason, setAccessPromptReason] = useState<'feature' | 'read-limit'>('feature');
+  const [showHomeAuthOverlay, setShowHomeAuthOverlay] = useState(false);
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -51,10 +72,13 @@ export default function App({ authUser, onLogout }: AppProps) {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isLightMode, setIsLightMode] = useState(true);
   const [, setBooksSyncVersion] = useState(0);
+  const isGuestUser = authUser?.id === 'guest';
+  const guestRestrictedPages: Page[] = ['favorites', 'downloads', 'settings', 'profile', 'notifications'];
   const [user, setUser] = useState({
-    name: authUser?.name || 'Library User',
+    name: authUser?.id === 'guest' ? 'Guest User' : authUser?.name || 'Library User',
     photo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
-    membership: 'Premium Member'
+    membership: authUser?.id === 'guest' ? 'Normal User' : membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
+    memberSince: authUser?.id === 'guest' ? '' : authUser?.memberSince || '',
   });
 
   React.useEffect(() => {
@@ -82,9 +106,76 @@ export default function App({ authUser, onLogout }: AppProps) {
   React.useEffect(() => {
     setUser((prev) => ({
       ...prev,
-      name: authUser?.name || prev.name,
+      name: authUser?.id === 'guest' ? 'Guest User' : authUser?.name || prev.name,
+      memberSince: authUser?.id === 'guest' ? '' : authUser?.memberSince || prev.memberSince,
     }));
-  }, [authUser?.name]);
+  }, [authUser?.id, authUser?.memberSince, authUser?.name]);
+
+  React.useEffect(() => {
+    setUser((prev) => ({
+      ...prev,
+      membership: authUser?.id === 'guest' ? 'Normal User' : membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
+    }));
+  }, [authUser?.id, membershipTier]);
+
+  React.useEffect(() => {
+    const handleAuthRequired = (event: Event) => {
+      const reason = (event as CustomEvent)?.detail?.reason;
+      setAccessPromptReason(reason === 'feature' ? 'feature' : 'read-limit');
+      setShowAccessPrompt(true);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const handleTierChange = (event: Event) => {
+      const next = (event as CustomEvent)?.detail;
+      if (next === 'reader' || next === 'normal') {
+        setMembershipTier(next);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener(MEMBERSHIP_TIER_EVENT, handleTierChange as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener(MEMBERSHIP_TIER_EVENT, handleTierChange as EventListener);
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (isGuestUser) return;
+    setShowAccessPrompt(false);
+    setShowHomeAuthOverlay(false);
+    setPendingNav(null);
+    if (authUser?.role === 'user' && membershipTier !== 'reader') {
+      setMembershipTier('reader');
+    }
+  }, [authUser?.id, authUser?.role, isGuestUser, membershipTier]);
+
+  const handleAuthRedirect = () => {
+    setShowAccessPrompt(false);
+    setShowHomeAuthOverlay(true);
+    setCurrentPage('home');
+    window.scrollTo(0, 0);
+  };
+
+  const handleHomeAuthSuccess = () => {
+    setShowHomeAuthOverlay(false);
+    const next = pendingNav;
+    setPendingNav(null);
+    if (next) {
+      navigateTo(next.page, next.data);
+    }
+  };
 
   const notifications = [
     { id: 1, type: 'new', title: 'New Arrival', message: 'Sea of Tranquility is now available!', time: '2m ago', unread: true, icon: <Icons.Book className="size-4" /> },
@@ -94,6 +185,12 @@ export default function App({ authUser, onLogout }: AppProps) {
   ];
 
   const navigateTo = (page: Page, data?: any) => {
+    if (isGuestUser && guestRestrictedPages.includes(page)) {
+      setPendingNav({page, data});
+      setAccessPromptReason('feature');
+      setShowAccessPrompt(true);
+      return;
+    }
     if (page === 'book-details' && data) setSelectedBook(data);
     if (page === 'author-details' && data) setSelectedAuthor(data);
     setCurrentPage(page);
@@ -152,13 +249,25 @@ export default function App({ authUser, onLogout }: AppProps) {
   const quickResults = filteredBooks.slice(0, 6);
   const handleLogout = () => {
     onLogout();
+    setShowHomeAuthOverlay(false);
     setCurrentPage('home');
     window.scrollTo(0, 0);
   };
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'home': return <Home onNavigate={navigateTo} />;
+      case 'home':
+        return (
+          <Home
+            onNavigate={navigateTo}
+            onLogin={onLogin}
+            onRegister={onRegister}
+            showAuthOverlay={showHomeAuthOverlay && authUser?.id === 'guest'}
+            authOverlayReason={accessPromptReason}
+            onCloseAuthOverlay={() => setShowHomeAuthOverlay(false)}
+            onAuthSuccess={handleHomeAuthSuccess}
+          />
+        );
       case 'categories': return <Categories onNavigate={navigateTo} />;
       case 'favorites': return <Favorites onNavigate={navigateTo} />;
       case 'downloads': return <Downloads onNavigate={navigateTo} />;
@@ -169,7 +278,18 @@ export default function App({ authUser, onLogout }: AppProps) {
       case 'author-details': return <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
       case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
       case 'logout': return <Logout onLogout={handleLogout} onNavigate={navigateTo} />;
-      default: return <Home onNavigate={navigateTo} />;
+      default:
+        return (
+          <Home
+            onNavigate={navigateTo}
+            onLogin={onLogin}
+            onRegister={onRegister}
+            showAuthOverlay={showHomeAuthOverlay && authUser?.id === 'guest'}
+            authOverlayReason={accessPromptReason}
+            onCloseAuthOverlay={() => setShowHomeAuthOverlay(false)}
+            onAuthSuccess={handleHomeAuthSuccess}
+          />
+        );
     }
   };
 
@@ -313,13 +433,25 @@ export default function App({ authUser, onLogout }: AppProps) {
               <div 
                 className="size-10 rounded-full bg-primary/20 bg-cover bg-center border-2 border-primary/20 cursor-pointer overflow-hidden"
                 style={{ backgroundImage: `url('${user.photo}')` }}
-                onClick={() => navigateTo('profile')}
+                onClick={() => {
+                  if (isGuestUser) {
+                    handleAuthRedirect();
+                    return;
+                  }
+                  navigateTo('profile');
+                }}
               />
               <button
-                onClick={onLogout}
+                onClick={() => {
+                  if (isGuestUser) {
+                    handleAuthRedirect();
+                    return;
+                  }
+                  navigateTo('logout');
+                }}
                 className="hidden sm:block rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
               >
-                Logout
+                {isGuestUser ? 'Login' : 'Logout'}
               </button>
             </div>
           </div>
@@ -404,6 +536,44 @@ export default function App({ authUser, onLogout }: AppProps) {
         <MobileNavLink active={currentPage === 'favorites'} onClick={() => navigateTo('favorites')} icon={<Icons.Heart className="size-5" />} label="Favorites" />
         <MobileNavLink active={currentPage === 'profile'} onClick={() => navigateTo('profile')} icon={<Icons.User className="size-5" />} label="Profile" />
       </nav>
+
+      {showAccessPrompt ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-xl rounded-3xl border border-border bg-bg p-8 shadow-2xl">
+            <div className="flex items-center gap-3 text-primary">
+              <Icons.User className="size-6" />
+              <p className="text-xs font-bold uppercase tracking-widest">Reader Access Required</p>
+            </div>
+            <h3 className="mt-4 text-2xl font-bold text-text">
+              {accessPromptReason === 'read-limit' ? 'Guest reading limit reached.' : 'Choose how you want to continue.'}
+            </h3>
+            <p className="mt-2 text-sm text-text-muted leading-relaxed">
+              {accessPromptReason === 'read-limit'
+                ? 'Guests can open 2 books for free. To continue reading more books, sign in or register as a Reader.'
+                : 'You can keep browsing as a normal guest user, or sign in/register as a Reader to unlock this feature.'}
+            </p>
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAccessPrompt(false);
+                  setPendingNav(null);
+                }}
+                className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-bold text-text-muted hover:text-text hover:bg-white/5 transition-all"
+              >
+                Stay as Guest
+              </button>
+              <button
+                type="button"
+                onClick={handleAuthRedirect}
+                className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 transition-all"
+              >
+                Register / Login as Reader
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

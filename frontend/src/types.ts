@@ -260,7 +260,7 @@ const resolveApiBaseUrl = (): string => {
   const envBase = ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) || '';
   const trimmed = envBase.trim().replace(/\/$/, '');
   const fromClient = String(API_BASE_URL || '').trim().replace(/\/$/, '');
-  return trimmed || fromClient || 'http://127.0.0.1:8000';
+  return trimmed || fromClient || 'https://elibrary.pncproject.site';
 };
 
 const asAbsoluteUrl = (value: string | undefined | null): string => {
@@ -305,17 +305,21 @@ const normalizeApiBook = (book: ApiBookPayload, index: number): BookType | null 
 
 export async function hydrateBooksFromApi(): Promise<number> {
   const base = resolveApiBaseUrl();
-  const endpoints = [`${base}/api/auth/books`, `${base}/api/books`];
+  const endpoints = [`${base}/api/books`, `${base}/api/auth/books`];
 
   let payload: any = null;
-  for (const endpoint of endpoints) {
+  for (let index = 0; index < endpoints.length; index += 1) {
+    const endpoint = endpoints[index];
     try {
       const response = await fetch(endpoint, { method: 'GET' });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        if (response.status === 404 && index === 0) continue;
+        break;
+      }
       payload = await response.json();
       if (payload) break;
     } catch {
-      // Try fallback endpoint
+      if (index > 0) break;
     }
   }
 

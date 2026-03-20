@@ -38,6 +38,14 @@ async function with404Fallback<T>(paths: string[], fn: (path: string) => Promise
   throw lastError || new Error('Books endpoint not found.');
 }
 
+type BookListAttempt = {
+  path: string;
+  params?: ListBooksParams;
+  auth?: boolean;
+};
+
+const FALLBACK_BOOKS_PER_PAGE = 15;
+
 function pickString(...values: unknown[]): string {
   for (const value of values) {
     const normalized = String(value ?? '').trim();
@@ -87,19 +95,107 @@ function pickUrlFromObject(obj: any): string {
   return asAbsoluteMaybeUrl(direct);
 }
 
+function clampPositiveInteger(value: unknown): number | undefined {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return undefined;
+  return Math.floor(numeric);
+}
+
+function normalizeListParams(params?: ListBooksParams): ListBooksParams | undefined {
+  if (!params) return undefined;
+
+  const next: ListBooksParams = {...params};
+  const page = clampPositiveInteger(next.page);
+  const perPage = clampPositiveInteger(next.per_page);
+
+  if (page === undefined) delete next.page;
+  else next.page = page;
+
+  if (perPage === undefined) delete next.per_page;
+  else next.per_page = perPage;
+
+  return next;
+}
+
+function omitPerPage(params?: ListBooksParams): ListBooksParams | undefined {
+  if (!params || params.per_page === undefined) return params;
+  const next = {...params};
+  delete next.per_page;
+  return next;
+}
+
+function withFallbackPerPage(params?: ListBooksParams): ListBooksParams | undefined {
+  if (!params || params.per_page === undefined || params.per_page <= FALLBACK_BOOKS_PER_PAGE) return undefined;
+  const next = {...params};
+  next.per_page = FALLBACK_BOOKS_PER_PAGE;
+  return next;
+}
+
+function buildListAttempts(params?: ListBooksParams): BookListAttempt[] {
+  const normalized = normalizeListParams(params);
+  const fallbackPerPage = withFallbackPerPage(normalized);
+  const withoutPerPage = omitPerPage(normalized);
+  const attempts: BookListAttempt[] = [];
+  const seen = new Set<string>();
+
+  const primaryAttempts: BookListAttempt[] = [
+    {path: '/api/books', params: normalized, auth: true},
+    {path: '/api/books', params: fallbackPerPage, auth: true},
+    {path: '/api/books', params: withoutPerPage, auth: true},
+    {path: '/api/books', params: withoutPerPage, auth: false},
+  ];
+
+  for (const attempt of primaryAttempts) {
+    const signature = JSON.stringify([
+      attempt.path,
+      attempt.auth !== false,
+      attempt.params?.q ?? null,
+      attempt.params?.category ?? null,
+      attempt.params?.page ?? null,
+      attempt.params?.per_page ?? null,
+      attempt.params?.sort ?? null,
+    ]);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    attempts.push(attempt);
+  }
+
+  return attempts;
+}
+
+function shouldRetryPrimaryListRequest(error: any): boolean {
+  const status = Number(error?.status);
+  return [401, 403, 405, 422, 500, 502, 503, 504].includes(status);
+}
+
 // book mapping lives in ./bookMapper
 
 export const bookService = {
   list: async (params?: ListBooksParams) => {
-    const requestList = async (path: string) =>
-      (await apiClient.get(withQuery(path, params), {
+    const requestList = async ({path, params: queryParams, auth = true}: BookListAttempt) =>
+      (await apiClient.get(withQuery(path, queryParams), {
         headers: {Accept: 'application/json'},
+        auth,
       })) as ApiEnvelope<any>;
+    let payload: ApiEnvelope<any> | null = null;
+    let lastError: any = null;
 
-    const payload = await with404Fallback<ApiEnvelope<any>>(
-      ['/api/books', '/api/auth/books', '/api/reader/books'],
-      requestList,
-    );
+    for (const attempt of buildListAttempts(params)) {
+      try {
+        payload = await with404Fallback<ApiEnvelope<any>>(
+          [attempt.path, '/api/auth/books', '/api/reader/books'],
+          (path) => requestList({...attempt, path}),
+        );
+        break;
+      } catch (error: any) {
+        lastError = error;
+        if (!shouldRetryPrimaryListRequest(error)) throw error;
+      }
+    }
+
+    if (!payload) {
+      throw lastError || new Error('Unable to load books.');
+    }
 
     const rawList =
       (Array.isArray((payload as any)?.data) && (payload as any).data) ||

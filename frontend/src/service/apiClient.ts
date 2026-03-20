@@ -3,6 +3,7 @@ type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export type ApiClientOptions = Omit<RequestInit, 'method' | 'body'> & {
   timeoutMs?: number;
   body?: unknown;
+  auth?: boolean;
 };
 
 export class ApiClientError extends Error {
@@ -13,6 +14,11 @@ export class ApiClientError extends Error {
 }
 
 function defaultBaseUrl(): string {
+  const viteEnv = (import.meta as any)?.env;
+  if (viteEnv?.DEV) {
+    // In dev, prefer same-origin + Vite proxy to avoid CORS failures.
+    return '';
+  }
   const productionHostname = 'elibrary.pncproject.site';
   const productionBaseUrl = `https://${productionHostname}`;
 
@@ -93,7 +99,7 @@ function isBlob(value: unknown): value is Blob {
 async function request(method: ApiMethod, path: string, options: ApiClientOptions = {}) {
   const url = buildUrl(path);
   const token = readToken();
-  const {headers: optionHeaders, timeoutMs = 20000, body, signal, ...restOptions} = options || {};
+  const {headers: optionHeaders, timeoutMs = 20000, body, signal, auth = true, ...restOptions} = options || {};
 
   const extraHeaders =
     typeof Headers !== 'undefined' && optionHeaders instanceof Headers
@@ -101,7 +107,7 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
       : (optionHeaders as Record<string, string> | undefined) || {};
 
   const headers: Record<string, string> = {
-    ...(token ? {Authorization: `Bearer ${token}`} : {}),
+    ...(auth && token ? {Authorization: `Bearer ${token}`} : {}),
     ...extraHeaders,
   };
 

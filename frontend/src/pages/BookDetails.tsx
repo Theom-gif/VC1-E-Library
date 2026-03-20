@@ -6,6 +6,7 @@ import {useFavorites} from '../context/FavoritesContext';
 import bookService from '../service/bookService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
+import {requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 
 interface BookDetailsProps {
   book?: BookType | null;
@@ -87,8 +88,13 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   };
 
   const openOnline = async () => {
+    if (shouldRequireAuthForRead()) {
+      requestAuth('read-limit');
+      return;
+    }
     const url = await bookService.readUrl(String(currentBook.id));
     openReaderTab({title: currentBook.title || 'Read', url});
+    trackRead(String(currentBook.id));
   };
 
   return (
@@ -113,9 +119,17 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <button
               onClick={() => {
                 if (downloaded) {
-                  void openOffline(String(currentBook.id)).catch((err: any) => {
-                    window.alert(err?.message || 'Unable to open offline book.');
-                  });
+                  if (shouldRequireAuthForRead()) {
+                    requestAuth('read-limit');
+                    return;
+                  }
+                  void openOffline(String(currentBook.id))
+                    .then(() => {
+                      trackRead(String(currentBook.id));
+                    })
+                    .catch((err: any) => {
+                      window.alert(err?.message || 'Unable to open offline book.');
+                    });
                   return;
                 }
                 void openOnline().catch((err: any) => {
@@ -131,9 +145,17 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <button
               onClick={() => {
                 if (downloaded) {
-                  void openOffline(String(currentBook.id)).catch((err: any) => {
-                    window.alert(err?.message || 'Unable to open offline book.');
-                  });
+                  if (shouldRequireAuthForRead()) {
+                    requestAuth('read-limit');
+                    return;
+                  }
+                  void openOffline(String(currentBook.id))
+                    .then(() => {
+                      trackRead(String(currentBook.id));
+                    })
+                    .catch((err: any) => {
+                      window.alert(err?.message || 'Unable to open offline book.');
+                    });
                   return;
                 }
                 if (active && active.status === 'paused') {

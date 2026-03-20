@@ -9,15 +9,15 @@ interface CategoriesProps {
 
 const CATEGORIES = [
   { name: 'All Genres', icon: <Icons.LayoutDashboard className="size-4" />, count: 1240 },
-  { name: 'Fiction', icon: <Icons.Book className="size-4" />, count: 450 },
+  { name: 'Technology', icon: <Icons.Book className="size-4" />, count: 450 },
   { name: 'Novel', icon: <Icons.BookOpen className="size-4" />, count: 320 },
-  { name: 'Sci-Fi & Fantasy', icon: <Icons.Rocket className="size-4" />, count: 210 },
-  { name: 'Mystery & Thriller', icon: <Icons.Search className="size-4" />, count: 180 },
-  { name: 'Education', icon: <Icons.Award className="size-4" />, count: 150 },
-  { name: 'Technology', icon: <Icons.Globe className="size-4" />, count: 135 },
-  { name: 'Self-Help', icon: <Icons.Flame className="size-4" />, count: 120 },
-  { name: 'History', icon: <Icons.History className="size-4" />, count: 95 },
-  { name: 'Classics', icon: <Icons.Award className="size-4" />, count: 85 },
+  { name: 'Education', icon: <Icons.Rocket className="size-4" />, count: 210 },
+  { name: 'Business', icon: <Icons.Search className="size-4" />, count: 180 },
+  { name: 'History', icon: <Icons.Award className="size-4" />, count: 150 },
+  // { name: 'Technology', icon: <Icons.Globe className="size-4" />, count: 135 },
+  // { name: 'Self-Help', icon: <Icons.Flame className="size-4" />, count: 120 },
+  // { name: 'History', icon: <Icons.History className="size-4" />, count: 95 },
+  // { name: 'Classics', icon: <Icons.Award className="size-4" />, count: 85 },
 ];
 
 const BOOKS_PER_PAGE = 8;
