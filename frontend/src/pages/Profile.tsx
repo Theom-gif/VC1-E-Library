@@ -59,12 +59,30 @@ function getLocalTimezone(): string {
   }
 }
 
+function splitFullName(value: string): {firstname: string; lastname: string} {
+  const parts = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!parts.length) return {firstname: '', lastname: ''};
+  if (parts.length === 1) return {firstname: parts[0], lastname: ''};
+
+  return {
+    firstname: parts[0],
+    lastname: parts.slice(1).join(' '),
+  };
+}
+
 export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) {
   const {books} = useLibrary();
   const [isEditing, setIsEditing] = React.useState(false);
   const [editName, setEditName] = React.useState(user.name);
   const [editPhoto, setEditPhoto] = React.useState(user.photo);
+  const [selectedPhotoFile, setSelectedPhotoFile] = React.useState<File | null>(null);
   const [photoError, setPhotoError] = React.useState('');
+  const [saveError, setSaveError] = React.useState('');
+  const [isSavingProfile, setIsSavingProfile] = React.useState(false);
   const [readingActivityRange, setReadingActivityRange] = React.useState<ReadingActivityRange>('7d');
   const [readingActivity, setReadingActivity] = React.useState<ReadingActivityBucket[]>(READING_ACTIVITY_FALLBACK['7d']);
   const [readingActivityTotal, setReadingActivityTotal] = React.useState(
@@ -75,12 +93,38 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
   const [currentlyReading, setCurrentlyReading] = React.useState(() => books.slice(0, 2));
   const [currentlyReadingLoading, setCurrentlyReadingLoading] = React.useState(false);
   const [currentlyReadingError, setCurrentlyReadingError] = React.useState('');
+  const [profileStats, setProfileStats] = React.useState({
+    booksReadCount: 0,
+    readingDaysCount: 0,
+  });
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     setEditName(user.name);
     setEditPhoto(user.photo);
+    setSelectedPhotoFile(null);
   }, [user.name, user.photo]);
+
+  React.useEffect(() => {
+    let alive = true;
+
+    void profileService
+      .me()
+      .then((profile) => {
+        if (!alive || !profile.stats) return;
+        setProfileStats({
+          booksReadCount: profile.stats.booksReadCount,
+          readingDaysCount: profile.stats.readingDaysCount,
+        });
+      })
+      .catch(() => {
+        // Keep UI fallback values if backend profile stats are unavailable.
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     let alive = true;
@@ -152,10 +196,72 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
   const booksReadValue = String(readingActivity.filter((item) => item.minutes > 0).length);
   const readingStreakValue = `${readingActivity.reduce((count, item) => (item.minutes > 0 ? count + 1 : count), 0)} Days`;
 
-  const handleSave = () => {
-    onUpdateUser({...user, name: editName, photo: editPhoto});
+  const handleSave = async () => {
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      setSaveError('Name is required.');
+      return;
+    }
+
+    const {firstname, lastname} = splitFullName(trimmedName);
+    const avatarForBackend = String(editPhoto || '').trim();
+
+    setIsSavingProfile(true);
+    setSaveError('');
     setPhotoError('');
-    setIsEditing(false);
+    try {
+      const saved = await profileService.updateProfile({
+        firstname,
+        lastname,
+        avatar: avatarForBackend || undefined,
+      });
+      let persisted = saved;
+      try {
+        persisted = await profileService.me();
+      } catch {
+        // Keep the successful update response if the follow-up read is unavailable.
+      }
+
+      const nextUser = {
+        ...user,
+        name: persisted.name || saved.name || trimmedName,
+        photo: persisted.photo || saved.photo || avatarForBackend || editPhoto || user.photo,
+        membership: persisted.membership || saved.membership || user.membership,
+        memberSince: persisted.memberSince || saved.memberSince || user.memberSince,
+      };
+
+      onUpdateUser(nextUser);
+      setEditName(nextUser.name);
+      setEditPhoto(nextUser.photo);
+      setSelectedPhotoFile(null);
+      if (persisted.stats) {
+        setProfileStats({
+          booksReadCount: persisted.stats.booksReadCount,
+          readingDaysCount: persisted.stats.readingDaysCount,
+        });
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setIsEditing(false);
+    } catch (error: any) {
+      const fallbackUser = {
+        ...user,
+        name: trimmedName,
+        photo: editPhoto || user.photo,
+      };
+      onUpdateUser(fallbackUser);
+      setEditName(fallbackUser.name);
+      setEditPhoto(fallbackUser.photo);
+      setSelectedPhotoFile(null);
+      setSaveError('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setIsEditing(false);
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handlePhotoPick = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -163,9 +269,13 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setPhotoError('Please choose an image file.');
+      setSelectedPhotoFile(null);
       event.target.value = '';
       return;
     }
+
+    setSelectedPhotoFile(file);
+    setSaveError('');
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -176,6 +286,18 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
       setPhotoError('Unable to load this image.');
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditName(user.name);
+    setEditPhoto(user.photo);
+    setSelectedPhotoFile(null);
+    setPhotoError('');
+    setSaveError('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   return (
@@ -227,9 +349,12 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
                     >
                       Choose From Files
                     </button>
-                    <p className="text-xs text-text-muted">Select a photo from your device.</p>
+                    <p className="text-xs text-text-muted">
+                      {selectedPhotoFile ? `${selectedPhotoFile.name} selected` : 'Select a photo from your device.'}
+                    </p>
                   </div>
                   {photoError ? <p className="text-xs text-red-400">{photoError}</p> : null}
+                  {saveError ? <p className="text-xs text-red-400">{saveError}</p> : null}
                 </div>
               </div>
             ) : (
@@ -243,8 +368,16 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
               </>
             )}
             <div className="flex flex-wrap justify-center md:justify-start gap-4 pt-2">
-              <StatBadge label="Books Read" value={booksReadValue} icon={<Icons.Book className="size-3" />} />
-              <StatBadge label="Reading Streak" value={readingStreakValue} icon={<Icons.Flame className="size-3" />} />
+              <StatBadge
+                label="Books Read"
+                value={String(profileStats.booksReadCount || Number(booksReadValue))}
+                icon={<Icons.Book className="size-3" />}
+              />
+              <StatBadge
+                label="Reading Streak"
+                value={`${profileStats.readingDaysCount || readingActivity.reduce((count, item) => (item.minutes > 0 ? count + 1 : count), 0)} Days`}
+                icon={<Icons.Flame className="size-3" />}
+              />
               <StatBadge label="Followers" value="842" icon={<Icons.User className="size-3" />} />
             </div>
           </div>
@@ -252,16 +385,18 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
             {isEditing ? (
               <>
                 <button
-                  onClick={() => setIsEditing(false)}
+                  onClick={handleCancelEdit}
+                  disabled={isSavingProfile}
                   className="px-6 py-2 rounded-xl font-bold text-text-muted hover:text-text transition-all"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSave}
-                  className="bg-primary text-white px-8 py-2 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
+                  onClick={() => void handleSave()}
+                  disabled={isSavingProfile}
+                  className="bg-primary text-white px-8 py-2 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-60"
                 >
-                  Save Changes
+                  {isSavingProfile ? 'Saving...' : 'Save Changes'}
                 </button>
               </>
             ) : (

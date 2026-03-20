@@ -16,6 +16,7 @@ import NotificationsPage from './pages/Notifications';
 import Logout from './pages/Logout';
 import SearchPage from './pages/Search';
 import CoverImage from './components/CoverImage';
+import profileService from './service/profileService';
 import {
   AUTH_REQUIRED_EVENT,
   getMembershipTier,
@@ -58,6 +59,37 @@ type AppProps = {
   }) => Promise<void>;
 };
 
+const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
+const DEFAULT_PROFILE_PHOTO =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI';
+
+function readProfileCache(): Partial<{name: string; photo: string; memberSince: string}> {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeProfileCache(value: Partial<{name: string; photo: string; memberSince: string}>) {
+  try {
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(value));
+  } catch {
+    // ignore storage issues
+  }
+}
+
+function clearProfileCache() {
+  try {
+    localStorage.removeItem(PROFILE_CACHE_KEY);
+  } catch {
+    // ignore storage issues
+  }
+}
+
 export default function App({ authUser, onLogout, onLogin, onRegister }: AppProps) {
   const {books, newArrivals} = useLibrary();
   const [membershipTier, setMembershipTier] = useState<MembershipTier>(() => getMembershipTier());
@@ -74,11 +106,12 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const [, setBooksSyncVersion] = useState(0);
   const isGuestUser = authUser?.id === 'guest';
   const guestRestrictedPages: Page[] = ['favorites', 'downloads', 'settings', 'profile', 'notifications'];
+  const cachedProfile = readProfileCache();
   const [user, setUser] = useState({
-    name: authUser?.id === 'guest' ? 'Guest User' : authUser?.name || 'Library User',
-    photo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
+    name: authUser?.id === 'guest' ? 'Guest User' : cachedProfile.name || authUser?.name || 'Library User',
+    photo: cachedProfile.photo || DEFAULT_PROFILE_PHOTO,
     membership: authUser?.id === 'guest' ? 'Normal User' : membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
-    memberSince: authUser?.id === 'guest' ? '' : authUser?.memberSince || '',
+    memberSince: authUser?.id === 'guest' ? '' : cachedProfile.memberSince || authUser?.memberSince || '',
   });
 
   React.useEffect(() => {
@@ -106,8 +139,9 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   React.useEffect(() => {
     setUser((prev) => ({
       ...prev,
-      name: authUser?.id === 'guest' ? 'Guest User' : authUser?.name || prev.name,
-      memberSince: authUser?.id === 'guest' ? '' : authUser?.memberSince || prev.memberSince,
+      name: authUser?.id === 'guest' ? 'Guest User' : readProfileCache().name || authUser?.name || prev.name,
+      memberSince: authUser?.id === 'guest' ? '' : readProfileCache().memberSince || authUser?.memberSince || prev.memberSince,
+      photo: authUser?.id === 'guest' ? DEFAULT_PROFILE_PHOTO : readProfileCache().photo || prev.photo || DEFAULT_PROFILE_PHOTO,
     }));
   }, [authUser?.id, authUser?.memberSince, authUser?.name]);
 
@@ -165,6 +199,43 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       setMembershipTier('reader');
     }
   }, [authUser?.id, authUser?.role, isGuestUser, membershipTier]);
+
+  React.useEffect(() => {
+    if (isGuestUser) return;
+    let alive = true;
+
+    void profileService
+      .me()
+      .then((profile) => {
+        if (!alive) return;
+        setUser((prev) => ({
+          ...prev,
+          name: profile.name || prev.name,
+          photo: profile.photo || prev.photo || DEFAULT_PROFILE_PHOTO,
+          memberSince: profile.memberSince || prev.memberSince,
+          membership: profile.membership || prev.membership,
+        }));
+      })
+      .catch(() => {
+        // Keep cached/local profile when backend profile read is unavailable.
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [isGuestUser, authUser?.id]);
+
+  React.useEffect(() => {
+    if (isGuestUser) {
+      clearProfileCache();
+      return;
+    }
+    writeProfileCache({
+      name: user.name,
+      photo: user.photo,
+      memberSince: user.memberSince,
+    });
+  }, [isGuestUser, user.memberSince, user.name, user.photo]);
 
   const handleAuthRedirect = () => {
     setShowAccessPrompt(false);

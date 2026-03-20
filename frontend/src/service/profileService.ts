@@ -1,9 +1,27 @@
-import apiClient from './apiClient';
+import apiClient, {API_BASE_URL} from './apiClient';
 import {withQuery} from './queryString';
 import {toBookType} from './bookMapper';
 import type {BookType} from '../types';
 
 export type ReadingActivityRange = '7d' | '30d' | '1y';
+export type ProfileSummary = {
+  firstname?: string;
+  lastname?: string;
+  name: string;
+  photo: string;
+  bio?: string;
+  facebookUrl?: string;
+  memberSince?: string;
+  membership?: string;
+  stats?: {
+    favoritesCount: number;
+    downloadsCount: number;
+    booksReadCount: number;
+    readingDaysCount: number;
+    totalReadingSeconds: number;
+    totalReadingMinutes: number;
+  };
+};
 
 export type ReadingActivityBucket = {
   key: string;
@@ -45,6 +63,23 @@ function pickNumber(...values: unknown[]): number {
     if (Number.isFinite(n) && !Number.isNaN(n)) return n;
   }
   return 0;
+}
+
+function asAbsoluteAssetUrl(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^(https?:|data:)/i.test(raw)) return raw;
+
+  const base = String(API_BASE_URL || '').trim().replace(/\/+$/, '');
+  const normalized = raw.replace(/^\/+/, '');
+
+  if (!base) return raw.startsWith('/') ? raw : `/${normalized}`;
+  if (raw.startsWith('/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('storage/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('uploads/') || normalized.startsWith('images/') || normalized.startsWith('assets/')) {
+    return `${base}/${normalized}`;
+  }
+  return `${base}/storage/${normalized}`;
 }
 
 function normalizeReadingActivityRange(value: unknown): ReadingActivityRange {
@@ -105,6 +140,36 @@ function normalizeCurrentlyReadingResponse(payload: any): BookType[] {
     .filter((book) => Boolean(book.id && book.title));
 }
 
+function normalizeProfileSummary(payload: any): ProfileSummary {
+  const dataSource = pickObject(payload?.data || payload);
+  const source = pickObject(dataSource?.user || payload?.user || payload?.profile || dataSource);
+  const statsSource = pickObject(dataSource?.stats);
+  const firstname = pickString(source?.firstname, source?.first_name);
+  const lastname = pickString(source?.lastname, source?.last_name);
+  return {
+    firstname: firstname || undefined,
+    lastname: lastname || undefined,
+    name: pickString(source?.full_name, source?.name, `${firstname} ${lastname}`.trim(), source?.username, 'Library User'),
+    photo: asAbsoluteAssetUrl(
+      pickString(source?.photo, source?.photo_url, source?.avatar, source?.avatar_url, source?.image, source?.image_url),
+    ),
+    bio: pickString(source?.bio) || undefined,
+    facebookUrl: pickString(source?.facebook_url, source?.facebookUrl) || undefined,
+    memberSince: pickString(source?.member_since, source?.created_at, source?.joined_at) || undefined,
+    membership: pickString(source?.membership, source?.membership_label) || undefined,
+    stats: Object.keys(statsSource).length
+      ? {
+          favoritesCount: pickNumber(statsSource?.favorites_count),
+          downloadsCount: pickNumber(statsSource?.downloads_count),
+          booksReadCount: pickNumber(statsSource?.books_read_count),
+          readingDaysCount: pickNumber(statsSource?.reading_days_count),
+          totalReadingSeconds: pickNumber(statsSource?.total_reading_seconds),
+          totalReadingMinutes: pickNumber(statsSource?.total_reading_minutes),
+        }
+      : undefined,
+  };
+}
+
 async function getWithAliasFallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
   let lastError: any;
   for (const path of paths) {
@@ -118,10 +183,91 @@ async function getWithAliasFallback<T>(paths: string[], fn: (path: string) => Pr
   throw lastError || new Error('Profile endpoint not found.');
 }
 
-export const profileService = {
-  me: () => apiClient.get('/api/me'),
+function buildProfileJsonPayload(payload: {
+  firstname?: string;
+  lastname?: string;
+  bio?: string;
+  facebook_url?: string;
+  avatar?: string | null;
+}) {
+  const body: Record<string, string> = {};
+  const firstname = pickString(payload?.firstname);
+  const lastname = pickString(payload?.lastname);
+  const bio = String(payload?.bio || '').trim();
+  const facebookUrl = String(payload?.facebook_url || '').trim();
+  const avatar = String(payload?.avatar || '').trim();
 
-  updateProfile: (payload: {name?: string; photo?: string}) => apiClient.patch('/api/me', payload),
+  if (firstname) body.firstname = firstname;
+  if (lastname) body.lastname = lastname;
+  if (bio) body.bio = bio;
+  if (facebookUrl) body.facebook_url = facebookUrl;
+  if (avatar) body.avatar = avatar;
+
+  return body;
+}
+
+async function updateProfileWithFallback(payload: {
+  firstname?: string;
+  lastname?: string;
+  bio?: string;
+  facebook_url?: string;
+  avatar?: string | null;
+}) {
+  const body = buildProfileJsonPayload(payload);
+  const paths = ['/api/me/profile', '/api/me'];
+  let lastError: any;
+
+  for (const path of paths) {
+    try {
+      return await apiClient.patch(path, body, {headers: {Accept: 'application/json'}});
+    } catch (error: any) {
+      const status = Number(error?.status);
+      if (status === 404) {
+        lastError = error;
+        continue;
+      }
+      if (status !== 405) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+
+  for (const path of paths) {
+    try {
+      return await apiClient.put(path, body, {headers: {Accept: 'application/json'}});
+    } catch (error: any) {
+      if (Number(error?.status) !== 404) throw error;
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Profile update endpoint not found.');
+}
+
+export const profileService = {
+  me: async (): Promise<ProfileSummary> => {
+    const payload = await getWithAliasFallback(
+      [
+        '/api/me/profile',
+        '/api/me',
+        '/api/profile',
+      ],
+      (path) => apiClient.get(path),
+    );
+    return normalizeProfileSummary(payload);
+  },
+
+  updateProfile: async (payload: {
+    firstname?: string;
+    lastname?: string;
+    bio?: string;
+    facebook_url?: string;
+    avatar?: string | null;
+  }): Promise<ProfileSummary> => {
+    const response = await updateProfileWithFallback(payload);
+    return normalizeProfileSummary(response);
+  },
 
   updateSettings: (payload: Record<string, unknown>) => apiClient.patch('/api/me/settings', payload),
 
