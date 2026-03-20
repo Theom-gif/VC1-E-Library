@@ -25,6 +25,18 @@ export type ListBooksParams = {
   sort?: 'newest' | 'rating' | 'popular';
 };
 
+export type ApiDownloadRecord = {
+  id?: string | number;
+  book_id?: string | number;
+  status?: string;
+  book?: any;
+  download_url?: string;
+  stream_url?: string;
+  url?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 async function with404Fallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
   let lastError: any;
   for (const path of paths) {
@@ -45,6 +57,7 @@ type BookListAttempt = {
 };
 
 const FALLBACK_BOOKS_PER_PAGE = 15;
+const BOOK_LIST_TIMEOUT_MS = 45000;
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -52,6 +65,12 @@ function pickString(...values: unknown[]): string {
     if (normalized) return normalized;
   }
   return '';
+}
+
+function normalizeBookId(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return raw.startsWith('api-') ? raw.slice(4) : raw;
 }
 
 function asAbsoluteAssetUrl(value: string): string {
@@ -165,7 +184,21 @@ function buildListAttempts(params?: ListBooksParams): BookListAttempt[] {
 
 function shouldRetryPrimaryListRequest(error: any): boolean {
   const status = Number(error?.status);
-  return [401, 403, 405, 422, 500, 502, 503, 504].includes(status);
+  return [401, 403, 405, 408, 422, 500, 502, 503, 504].includes(status);
+}
+
+async function withResolverFallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
+  let lastError: any;
+  for (const path of paths) {
+    try {
+      return await fn(path);
+    } catch (error: any) {
+      const status = Number(error?.status);
+      if (status !== 404 && status !== 405) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Download endpoint not found.');
 }
 
 // book mapping lives in ./bookMapper
@@ -176,6 +209,7 @@ export const bookService = {
       (await apiClient.get(withQuery(path, queryParams), {
         headers: {Accept: 'application/json'},
         auth,
+        timeoutMs: BOOK_LIST_TIMEOUT_MS,
       })) as ApiEnvelope<any>;
     let payload: ApiEnvelope<any> | null = null;
     let lastError: any = null;
@@ -216,7 +250,7 @@ export const bookService = {
   },
 
   getById: async (id: string) => {
-    const encodedId = encodeURIComponent(id);
+    const encodedId = encodeURIComponent(normalizeBookId(id));
     const payload = (await with404Fallback<ApiEnvelope<any>>(
       [`/api/books/${encodedId}`, `/api/auth/books/${encodedId}`, `/api/reader/books/${encodedId}`],
       (path) => apiClient.get(path, {headers: {Accept: 'application/json'}}) as any,
@@ -231,16 +265,33 @@ export const bookService = {
     };
   },
 
-  similar: (id: string) => apiClient.get(`/api/books/${encodeURIComponent(id)}/similar`),
+  similar: (id: string) => apiClient.get(`/api/books/${encodeURIComponent(normalizeBookId(id))}/similar`),
 
-  download: (id: string) => apiClient.post(`/api/books/${encodeURIComponent(id)}/download`),
+  download: (id: string) =>
+    withResolverFallback(
+      [
+        `/api/books/${encodeURIComponent(normalizeBookId(id))}/download`,
+        `/api/books/${encodeURIComponent(normalizeBookId(id))}/downloads`,
+      ],
+      (path) => apiClient.post(path),
+    ),
+
+  listDownloads: async () =>
+    (await apiClient.get('/api/downloads', {
+      headers: {Accept: 'application/json'},
+    })) as ApiEnvelope<ApiDownloadRecord[]>,
+
+  createDownloadRecord: async (id: string) =>
+    (await apiClient.post(`/api/books/${encodeURIComponent(normalizeBookId(id))}/downloads`, undefined, {
+      headers: {Accept: 'application/json'},
+    })) as ApiEnvelope<ApiDownloadRecord>,
 
   /**
    * Returns a URL that can be opened in a new tab for "Read Now".
    * Prefers a backend-provided `read_url`/`stream_url`/`download_url`.
    */
   readUrl: async (id: string) => {
-    const encodedId = encodeURIComponent(id);
+    const encodedId = encodeURIComponent(normalizeBookId(id));
 
     // 1) Try book details first (some APIs include `file_url` etc).
     try {
@@ -252,7 +303,7 @@ export const bookService = {
     }
 
     // 2) Fallback: use the download endpoint (expected to return a public/signed URL).
-    const payload = await apiClient.post(`/api/books/${encodedId}/download`);
+    const payload = await bookService.download(encodedId);
     const urlFromDownload = pickUrlFromObject((payload as any)?.data ?? payload);
     if (urlFromDownload) return urlFromDownload;
 

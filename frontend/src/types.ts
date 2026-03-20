@@ -293,7 +293,7 @@ const normalizeApiBook = (book: ApiBookPayload, index: number): BookType | null 
   const idValue = book?.id ?? `book-${index + 1}`;
 
   return {
-    id: `api-${String(idValue)}`,
+    id: String(idValue),
     title,
     author,
     cover,

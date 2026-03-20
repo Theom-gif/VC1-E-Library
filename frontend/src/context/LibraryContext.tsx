@@ -36,7 +36,7 @@ export function LibraryProvider({children}: {children: React.ReactNode}) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await bookService.list({per_page: 50});
+      const response = await bookService.list({per_page: 15});
       setBooks(response.items);
       setNewArrivals(response.items.slice(0, 5));
       setSource('api');

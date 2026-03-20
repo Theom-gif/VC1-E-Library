@@ -1,6 +1,12 @@
+import readingSessionService, {type ReadingSessionSource} from '../service/readingSessionService';
+
 type OpenReaderTabArgs = {
   title: string;
   url: string;
+  tracking?: {
+    bookId: string;
+    source: ReadingSessionSource;
+  };
 };
 
 // Use explicit Unicode escapes to avoid mojibake on systems that read files as non-UTF8.
@@ -15,10 +21,114 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function openReaderTab({title, url}: OpenReaderTabArgs) {
+function readToken(): string | null {
+  try {
+    return localStorage.getItem('token');
+  } catch {
+    return null;
+  }
+}
+
+function wireReadingTracking(
+  tab: Window,
+  tracking: {bookId: string; source: ReadingSessionSource},
+  trackingId: string,
+) {
+  if (!tracking?.bookId || !readToken()) return;
+
+  let sessionId = '';
+  let lastHeartbeatAt = Date.now();
+  let finished = false;
+  let isStarting = false;
+
+  const cleanup = () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('message', onMessage);
+    }
+    window.clearInterval(closePollId);
+  };
+
+  const startSession = async () => {
+    if (sessionId || finished || isStarting) return;
+    isStarting = true;
+    try {
+      const response = await readingSessionService.start({
+        book_id: tracking.bookId,
+        started_at: new Date().toISOString(),
+        source: tracking.source,
+      });
+      sessionId = response.sessionId;
+      lastHeartbeatAt = Date.now();
+    } catch {
+      cleanup();
+    } finally {
+      isStarting = false;
+    }
+  };
+
+  const sendHeartbeat = async () => {
+    if (!sessionId || finished) return;
+    const now = Date.now();
+    const secondsSinceLastPing = Math.max(1, Math.min(60, Math.round((now - lastHeartbeatAt) / 1000) || 30));
+    lastHeartbeatAt = now;
+    try {
+      await readingSessionService.heartbeat(sessionId, {
+        occurred_at: new Date(now).toISOString(),
+        seconds_since_last_ping: secondsSinceLastPing,
+      });
+    } catch {
+      // Ignore heartbeat failures so reading stays usable even if analytics is unavailable.
+    }
+  };
+
+  const finishSession = async () => {
+    if (!sessionId || finished) {
+      cleanup();
+      return;
+    }
+    finished = true;
+    try {
+      await readingSessionService.finish(sessionId, {
+        ended_at: new Date().toISOString(),
+      });
+    } catch {
+      // Ignore finish failures to avoid blocking the reader close flow.
+    } finally {
+      cleanup();
+    }
+  };
+
+  const onMessage = (event: MessageEvent) => {
+    if (event.source !== tab) return;
+    const payload = event.data;
+    if (!payload || payload.source !== 'elibrary-reader' || payload.trackingId !== trackingId) return;
+    if (payload.type === 'heartbeat') {
+      void sendHeartbeat();
+      return;
+    }
+    if (payload.type === 'closed') {
+      void finishSession();
+    }
+  };
+
+  const closePollId = window.setInterval(() => {
+    if (!tab.closed) return;
+    void finishSession();
+  }, 2000);
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('message', onMessage);
+  }
+
+  void startSession();
+}
+
+export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
   const safeTitle = escapeHtml(title || 'Reader');
   const safeAppTitle = escapeHtml(APP_TAB_TITLE);
   const safeUrl = escapeHtml(url);
+  const trackingId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const safeTrackingId = escapeHtml(trackingId);
 
   const tab = window.open('', '_blank');
   if (!tab) {
@@ -45,18 +155,65 @@ export function openReaderTab({title, url}: OpenReaderTabArgs) {
     </style>
   </head>
   <body>
-    <script>try{window.opener=null;}catch(e){}</script>
     <div class="bar">
       <div class="title" title="${safeTitle}">${safeTitle}</div>
       <a href="${safeUrl}" target="_blank" rel="noreferrer noopener">Open file</a>
     </div>
     <iframe class="frame" src="${safeUrl}" title="${safeTitle}"></iframe>
+    <script>
+      (function () {
+        var trackingId = "${safeTrackingId}";
+        var timer = null;
+        function post(type) {
+          try {
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({ source: "elibrary-reader", trackingId: trackingId, type: type }, "*");
+            }
+          } catch (error) {}
+        }
+        function isActive() {
+          try {
+            return document.visibilityState === "visible" && document.hasFocus();
+          } catch (error) {
+            return true;
+          }
+        }
+        function stopTimer() {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+        }
+        function startTimer() {
+          stopTimer();
+          if (!isActive()) return;
+          timer = setInterval(function () {
+            if (!isActive()) return;
+            post("heartbeat");
+          }, 30000);
+        }
+        startTimer();
+        window.addEventListener("focus", startTimer);
+        window.addEventListener("blur", stopTimer);
+        document.addEventListener("visibilitychange", function () {
+          if (isActive()) startTimer();
+          else stopTimer();
+        });
+        window.addEventListener("beforeunload", function () {
+          stopTimer();
+          post("closed");
+        });
+      })();
+    </script>
     <noscript>
       <div class="fallback">JavaScript is required to display this document. <a href="${safeUrl}">Open file</a></div>
     </noscript>
   </body>
 </html>`);
     tab.document.close();
+    if (tracking) {
+      wireReadingTracking(tab, tracking, trackingId);
+    }
   } catch {
     tab.location.href = url;
   }

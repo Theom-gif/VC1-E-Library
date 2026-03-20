@@ -120,8 +120,12 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
   }
 
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let didTimeout = false;
   const timeout = controller
-    ? setTimeout(() => controller.abort(), Math.max(0, Number(timeoutMs) || 0))
+    ? setTimeout(() => {
+        didTimeout = true;
+        controller.abort();
+      }, Math.max(0, Number(timeoutMs) || 0))
     : null;
 
   let combinedSignal: AbortSignal | undefined = controller?.signal;
@@ -153,10 +157,17 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
         ...restOptions,
       });
     } catch (fetchError: any) {
+      const isAbortError =
+        fetchError?.name === 'AbortError' || /aborted|aborterror|signal is aborted/i.test(String(fetchError?.message || ''));
       const error = new ApiClientError(
-        fetchError?.message ||
-          `Failed to fetch (${method} ${url}). Check VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
+        didTimeout
+          ? `Request timed out after ${Math.max(0, Number(timeoutMs) || 0)}ms`
+          : isAbortError
+            ? `Request was aborted (${method} ${url})`
+            : fetchError?.message ||
+              `Failed to fetch (${method} ${url}). Check VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
       );
+      if (didTimeout) error.status = 408;
       error.data = fetchError;
       error.method = method;
       error.url = url;

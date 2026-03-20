@@ -4,9 +4,10 @@ import {useDownloads} from '../context/DownloadContext';
 import {useLibrary} from '../context/LibraryContext';
 import {useFavorites} from '../context/FavoritesContext';
 import bookService from '../service/bookService';
+import ratingService, {type BookRatingsSummary} from '../service/ratingService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
-import {requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
+import {PENDING_BOOK_RATING_KEY, requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 
 interface BookDetailsProps {
   book?: BookType | null;
@@ -24,6 +25,68 @@ interface Comment {
   rating: number;
 }
 
+function normalizeBackendBookId(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return raw.startsWith('api-') ? raw.slice(4) : raw;
+}
+
+function readToken(): string | null {
+  try {
+    return localStorage.getItem('token');
+  } catch {
+    return null;
+  }
+}
+
+function fallbackRatingsSummary(book: BookType): BookRatingsSummary {
+  return {
+    book_id: normalizeBackendBookId(book?.id),
+    average_rating: Number(book?.rating) || 0,
+    total_ratings: Number(book?.reviews) || 0,
+    distribution: {'1': 0, '2': 0, '3': 0, '4': 0, '5': 0},
+    user_rating: null,
+  };
+}
+
+type PendingBookRating = {
+  bookId: string;
+  rating: number;
+};
+
+function readPendingBookRating(): PendingBookRating | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_BOOK_RATING_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingBookRating;
+    const bookId = normalizeBackendBookId(parsed?.bookId);
+    const rating = Number(parsed?.rating || 0);
+    if (!bookId || rating < 1 || rating > 5) return null;
+    return {bookId, rating};
+  } catch {
+    return null;
+  }
+}
+
+function savePendingBookRating(bookId: string, rating: number) {
+  try {
+    sessionStorage.setItem(
+      PENDING_BOOK_RATING_KEY,
+      JSON.stringify({bookId: normalizeBackendBookId(bookId), rating: Math.max(1, Math.min(5, Math.round(rating)))}),
+    );
+  } catch {
+    // ignore storage issues
+  }
+}
+
+function clearPendingBookRating() {
+  try {
+    sessionStorage.removeItem(PENDING_BOOK_RATING_KEY);
+  } catch {
+    // ignore storage issues
+  }
+}
+
 export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const {books} = useLibrary();
   const {startDownload, resume, openOffline, isDownloaded, activeById} = useDownloads();
@@ -37,6 +100,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const [commentText, setCommentText] = React.useState('');
   const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
   const [editingText, setEditingText] = React.useState('');
+  const [ratings, setRatings] = React.useState<BookRatingsSummary>(() => fallbackRatingsSummary(currentBook));
+  const [ratingError, setRatingError] = React.useState('');
+  const [selectedRating, setSelectedRating] = React.useState<number>(0);
+  const [isLoadingRatings, setIsLoadingRatings] = React.useState(false);
+  const [isSubmittingRating, setIsSubmittingRating] = React.useState(false);
   const [comments, setComments] = React.useState<Comment[]>([
     {
       id: '1',
@@ -87,14 +155,129 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     setEditingText('');
   };
 
+  React.useEffect(() => {
+    const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    let alive = true;
+
+    setRatings(fallbackRatingsSummary(currentBook));
+    setSelectedRating(0);
+    setRatingError('');
+    setIsLoadingRatings(true);
+
+    void ratingService
+      .getForBook(normalizedBookId)
+      .then((summary) => {
+        if (!alive) return;
+        setRatings(summary);
+        setSelectedRating(summary.user_rating || 0);
+      })
+      .catch((error: any) => {
+        if (!alive) return;
+        setRatings(fallbackRatingsSummary(currentBook));
+        if (Number(error?.status) !== 404) {
+          setRatingError(error?.data?.message || error?.message || 'Unable to load rating information.');
+        }
+      })
+      .finally(() => {
+        if (alive) setIsLoadingRatings(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [currentBook]);
+
+  React.useEffect(() => {
+    const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    const pending = readPendingBookRating();
+    if (!pending || pending.bookId !== normalizedBookId) return;
+    if (!readToken()) return;
+    if (isSubmittingRating) return;
+
+    clearPendingBookRating();
+    setSelectedRating(pending.rating);
+    void submitRating(pending.rating);
+  }, [currentBook.id, isSubmittingRating]);
+
+  const submitRating = async (nextRating: number) => {
+    const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    if (!nextRating) {
+      setRatingError('Select a star rating first.');
+      return;
+    }
+    if (!readToken()) {
+      savePendingBookRating(normalizedBookId, nextRating);
+      requestAuth('feature', {
+        returnTo: {
+          page: 'book-details',
+          data: currentBook,
+        },
+      });
+      return;
+    }
+
+    setIsSubmittingRating(true);
+    setRatingError('');
+    try {
+      const submitted = await ratingService.submitForBook(normalizedBookId, {rating: nextRating});
+      clearPendingBookRating();
+      setRatings((prev) => ({
+        ...prev,
+        ...submitted,
+        user_rating: submitted.user_rating || nextRating,
+      }));
+
+      const refreshed = await ratingService.getForBook(normalizedBookId);
+      setRatings(refreshed);
+      setSelectedRating(refreshed.user_rating || nextRating);
+    } catch (error: any) {
+      setRatingError(error?.data?.message || error?.message || 'Unable to submit your rating.');
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
+  const handleSubmitRating = async () => {
+    await submitRating(selectedRating);
+  };
+
+  const handleQuickRate = async (star: number) => {
+    setSelectedRating(star);
+    setRatingError('');
+    if (!readToken()) {
+      savePendingBookRating(normalizeBackendBookId(currentBook.id), star);
+      requestAuth('feature', {
+        returnTo: {
+          page: 'book-details',
+          data: currentBook,
+        },
+      });
+    } else {
+      await submitRating(star);
+    }
+  };
+
+  const displayAverageRating = ratings.average_rating > 0 ? ratings.average_rating : Number(currentBook.rating) || 0;
+  const displayTotalRatings = ratings.total_ratings > 0 ? ratings.total_ratings : Number(currentBook.reviews) || 0;
+  const activeUserRating = ratings.user_rating || selectedRating || 0;
+  const summaryStarValue = activeUserRating || Math.round(displayAverageRating);
+
   const openOnline = async () => {
     if (shouldRequireAuthForRead()) {
       requestAuth('read-limit');
       return;
     }
-    const url = await bookService.readUrl(String(currentBook.id));
-    openReaderTab({title: currentBook.title || 'Read', url});
-    trackRead(String(currentBook.id));
+    const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    const url = await bookService.readUrl(normalizedBookId);
+    openReaderTab({
+      title: currentBook.title || 'Read',
+      url,
+      tracking: {
+        bookId: normalizedBookId,
+        source: 'web',
+      },
+    });
+    trackRead(normalizedBookId);
   };
 
   return (
@@ -123,9 +306,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     requestAuth('read-limit');
                     return;
                   }
-                  void openOffline(String(currentBook.id))
+                  void openOffline(normalizeBackendBookId(currentBook.id))
                     .then(() => {
-                      trackRead(String(currentBook.id));
+                      trackRead(normalizeBackendBookId(currentBook.id));
                     })
                     .catch((err: any) => {
                       window.alert(err?.message || 'Unable to open offline book.');
@@ -149,9 +332,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     requestAuth('read-limit');
                     return;
                   }
-                  void openOffline(String(currentBook.id))
+                  void openOffline(normalizeBackendBookId(currentBook.id))
                     .then(() => {
-                      trackRead(String(currentBook.id));
+                      trackRead(normalizeBackendBookId(currentBook.id));
                     })
                     .catch((err: any) => {
                       window.alert(err?.message || 'Unable to open offline book.');
@@ -223,11 +406,26 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               <div className="flex items-center gap-2">
                 <div className="flex">
                   {[1, 2, 3, 4, 5].map((s) => (
-                    <Icons.Star key={s} className={`size-4 ${s <= Math.floor(currentBook.rating) ? 'text-yellow-500 fill-yellow-500' : 'text-text/10'}`} />
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => void handleQuickRate(s)}
+                      disabled={isSubmittingRating}
+                      className="transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={`Rate this book ${s} star${s === 1 ? '' : 's'}`}
+                      title={`Rate ${s} star${s === 1 ? '' : 's'}`}
+                    >
+                      <Icons.Star
+                        className={`size-4 ${s <= summaryStarValue ? 'text-yellow-500 fill-yellow-500' : 'text-text/10'}`}
+                      />
+                    </button>
                   ))}
                 </div>
-                <span className="text-sm font-bold text-text">{currentBook.rating}</span>
-                <span className="text-xs text-text-muted">({currentBook.reviews?.toLocaleString() || '1.2k'} reviews)</span>
+                <span className="text-sm font-bold text-text">{displayAverageRating ? displayAverageRating.toFixed(2) : '0.00'}</span>
+                <span className="text-xs text-text-muted">
+                  ({displayTotalRatings.toLocaleString()} ratings)
+                  {isSubmittingRating ? ' • Saving...' : activeUserRating ? ` • Your rating: ${activeUserRating}/5` : ' • Click stars to rate'}
+                </span>
               </div>
             </div>
           </div>
@@ -245,6 +443,83 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               {currentBook.description || "In this groundbreaking work, the author explores the fundamental principles that govern our understanding of the world. Through a series of compelling narratives and rigorous analysis, the book challenges conventional wisdom and offers a fresh perspective on the challenges we face in the 21st century."}
             </p>
             <button className="text-sm font-bold text-primary hover:underline">Read More</button>
+          </div>
+
+          <div className="space-y-5 rounded-3xl border border-border bg-surface p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-text">Rate This Book</h3>
+                <p className="text-sm text-text-muted">
+                  {isLoadingRatings
+                    ? 'Loading rating summary...'
+                    : `${displayAverageRating ? displayAverageRating.toFixed(2) : '0.00'} average from ${displayTotalRatings.toLocaleString()} ratings`}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-bg px-4 py-3 text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Your Rating</p>
+                <p className="text-lg font-bold text-text">{activeUserRating ? `${activeUserRating}/5` : 'Not rated'}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {[1, 2, 3, 4, 5].map((star) => {
+                const isActive = star <= (selectedRating || ratings.user_rating || 0);
+                return (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRating(star);
+                      setRatingError('');
+                      void handleQuickRate(star);
+                    }}
+                    className={`rounded-xl border px-3 py-2 transition-all ${
+                      isActive
+                        ? 'border-yellow-500/40 bg-yellow-500/10 text-yellow-500'
+                        : 'border-border bg-bg text-text-muted hover:border-primary/30 hover:text-primary'
+                    }`}
+                    aria-label={`Rate ${star} star${star === 1 ? '' : 's'}`}
+                  >
+                    <Icons.Star className={`size-5 ${isActive ? 'fill-current' : ''}`} />
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="space-y-2">
+              {[5, 4, 3, 2, 1].map((star) => {
+                const count = Number(ratings.distribution[String(star)] || 0);
+                const width = displayTotalRatings > 0 ? Math.round((count / displayTotalRatings) * 100) : 0;
+                return (
+                  <div key={star} className="flex items-center gap-3">
+                    <div className="flex w-10 items-center gap-1 text-xs font-bold text-text">
+                      <span>{star}</span>
+                      <Icons.Star className="size-3 fill-current text-yellow-500" />
+                    </div>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-bg">
+                      <div className="h-full rounded-full bg-primary" style={{width: `${width}%`}} />
+                    </div>
+                    <span className="w-8 text-right text-xs font-bold text-text-muted">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {ratingError ? <p className="text-sm font-semibold text-red-500">{ratingError}</p> : null}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleSubmitRating()}
+                disabled={isSubmittingRating || isLoadingRatings}
+                className="rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white transition-all hover:bg-primary/90 disabled:opacity-60"
+              >
+                {isSubmittingRating ? 'Submitting...' : ratings.user_rating ? 'Update Rating' : 'Submit Rating'}
+              </button>
+              <p className="text-xs text-text-muted">
+                Ratings require login and accept whole numbers from 1 to 5.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-8">

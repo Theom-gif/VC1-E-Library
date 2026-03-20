@@ -57,12 +57,27 @@ function readAuthToken(): string | null {
   return safeLocalStorageGet('token');
 }
 
+function hasAuthToken(): boolean {
+  return Boolean(readAuthToken());
+}
+
 function pickString(...values: unknown[]): string {
   for (const value of values) {
     const normalized = String(value ?? '').trim();
     if (normalized) return normalized;
   }
   return '';
+}
+
+function normalizeBackendBookId(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return raw.startsWith('api-') ? raw.slice(4) : raw;
+}
+
+function legacyBackendBookId(value: unknown): string {
+  const normalized = normalizeBackendBookId(value);
+  return normalized ? `api-${normalized}` : '';
 }
 
 function parseContentDispositionFilename(contentDisposition: string | null): string {
@@ -98,22 +113,53 @@ function sameOrigin(a: string, b: string): boolean {
   }
 }
 
+function currentWindowOrigin(): string {
+  try {
+    return String(window.location.origin || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function shouldAttachDownloadAuthHeader(url: string): boolean {
+  const origin = currentWindowOrigin();
+  if (!origin) return false;
+  return sameOrigin(url, origin);
+}
+
 async function resolveDownloadUrl(bookId: string): Promise<string> {
-  const payload = (await bookService.download(bookId)) as any;
+  const normalizedBookId = normalizeBackendBookId(bookId);
+  const payload = (await bookService.download(normalizedBookId)) as any;
   const url = pickString(
     payload?.download_url,
     payload?.stream_url,
     payload?.url,
+    payload?.read_url,
     payload?.data?.download_url,
     payload?.data?.stream_url,
     payload?.data?.url,
+    payload?.data?.read_url,
   );
 
   if (!url) {
-    throw new Error('Backend did not return a download URL. Expected `download_url` in JSON response.');
+    throw new Error('Backend did not return a download URL. Expected `download_url`, `stream_url`, `url`, or `read_url`.');
   }
 
   return ensureAbsoluteUrl(url);
+}
+
+async function syncDownloadRecordToBackend(bookId: string): Promise<void> {
+  const normalizedBookId = normalizeBackendBookId(bookId);
+  if (!normalizedBookId || !hasAuthToken()) return;
+  try {
+    await bookService.createDownloadRecord(normalizedBookId);
+  } catch (error: any) {
+    const status = Number(error?.status);
+    // The backend may already log via POST /api/books/{id}/download.
+    // Keep the local download successful even if the optional sync endpoint rejects or duplicates.
+    if ([400, 401, 403, 404, 405, 409, 422, 500].includes(status)) return;
+    throw error;
+  }
 }
 
 async function fetchBlobWithProgress(
@@ -122,13 +168,26 @@ async function fetchBlobWithProgress(
   onProgress: (snapshot: {receivedBytes: number; totalBytes: number | null; speedBytesPerSec: number}) => void,
 ): Promise<{blob: Blob; mimeType: string; fileName: string}> {
   const token = readAuthToken();
-  const headers: Record<string, string> = {};
+  const requestDownload = async (useAuthHeader: boolean) => {
+    const headers: Record<string, string> = {};
+    if (useAuthHeader && token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return fetch(url, {method: 'GET', headers, signal: controller.signal});
+  };
 
-  if (token && sameOrigin(url, API_BASE_URL)) {
-    headers.Authorization = `Bearer ${token}`;
+  const canUseAuthHeader = Boolean(token && shouldAttachDownloadAuthHeader(url));
+
+  let response: Response;
+  try {
+    response = await requestDownload(canUseAuthHeader);
+  } catch (error: any) {
+    if (!canUseAuthHeader) {
+      throw new Error(error?.message || 'Failed to fetch download file.');
+    }
+    response = await requestDownload(false);
   }
 
-  const response = await fetch(url, {method: 'GET', headers, signal: controller.signal});
   if (!response.ok) {
     throw new Error(`Download failed with status ${response.status}`);
   }
@@ -195,18 +254,29 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
   }, [refresh]);
 
   const isDownloaded = useCallback(
-    (bookId: string) => completed.some((entry) => entry.bookId === bookId),
+    (bookId: string) => {
+      const normalized = normalizeBackendBookId(bookId);
+      const legacy = legacyBackendBookId(bookId);
+      return completed.some((entry) => {
+        const entryId = normalizeBackendBookId(entry.bookId);
+        return entryId === normalized || entry.bookId === legacy;
+      });
+    },
     [completed],
   );
 
   const activeById = useCallback(
-    (bookId: string) => activeByBookId[bookId] || null,
+    (bookId: string) => {
+      const normalized = normalizeBackendBookId(bookId);
+      const legacy = legacyBackendBookId(bookId);
+      return activeByBookId[normalized] || activeByBookId[legacy] || null;
+    },
     [activeByBookId],
   );
 
   const startDownload = useCallback(
     async (book: BookType) => {
-      const bookId = String(book?.id || '').trim();
+      const bookId = normalizeBackendBookId(book?.id);
       if (!bookId) throw new Error('Cannot download: missing book id.');
       if (controllersRef.current.has(bookId)) return;
 
@@ -266,6 +336,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
         };
 
         await putDownload(record);
+        await syncDownloadRecordToBackend(bookId);
         await refresh();
       } catch (error: any) {
         const aborted = controller.signal.aborted;
@@ -298,13 +369,15 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
   );
 
   const pause = useCallback((bookId: string) => {
-    const controller = controllersRef.current.get(bookId);
+    const normalized = normalizeBackendBookId(bookId);
+    const legacy = legacyBackendBookId(bookId);
+    const controller = controllersRef.current.get(normalized) || controllersRef.current.get(legacy);
     if (controller) controller.abort();
   }, []);
 
   const resume = useCallback(
     async (book: BookType) => {
-      const bookId = String(book?.id || '').trim();
+      const bookId = normalizeBackendBookId(book?.id);
       if (!bookId) return;
       setActiveByBookId((prev) => {
         const current = prev[bookId];
@@ -329,30 +402,48 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
   );
 
   const cancel = useCallback((bookId: string) => {
-    const controller = controllersRef.current.get(bookId);
+    const normalized = normalizeBackendBookId(bookId);
+    const legacy = legacyBackendBookId(bookId);
+    const controller = controllersRef.current.get(normalized) || controllersRef.current.get(legacy);
     if (controller) controller.abort();
-    controllersRef.current.delete(bookId);
+    controllersRef.current.delete(normalized);
+    if (legacy) controllersRef.current.delete(legacy);
     setActiveByBookId((prev) => {
       const next = {...prev};
-      delete next[bookId];
+      delete next[normalized];
+      if (legacy) delete next[legacy];
       return next;
     });
   }, []);
 
   const remove = useCallback(
     async (bookId: string) => {
-      await deleteDownload(bookId);
+      const normalized = normalizeBackendBookId(bookId);
+      const legacy = legacyBackendBookId(bookId);
+      await deleteDownload(normalized);
+      if (legacy && legacy !== normalized) {
+        await deleteDownload(legacy);
+      }
       await refresh();
     },
     [refresh],
   );
 
   const openOffline = useCallback(async (bookId: string) => {
-    const record = await getDownload(bookId);
+    const normalized = normalizeBackendBookId(bookId);
+    const legacy = legacyBackendBookId(bookId);
+    const record = (await getDownload(normalized)) || (legacy ? await getDownload(legacy) : null);
     if (!record) throw new Error('This book is not downloaded on this device.');
     const url = URL.createObjectURL(record.blob);
     try {
-      openReaderTab({title: record.book?.title || 'Offline Read', url});
+      openReaderTab({
+        title: record.book?.title || 'Offline Read',
+        url,
+        tracking: {
+          bookId: normalized,
+          source: 'offline',
+        },
+      });
     } finally {
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     }

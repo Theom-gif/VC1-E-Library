@@ -120,8 +120,13 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   React.useEffect(() => {
     const handleAuthRequired = (event: Event) => {
-      const reason = (event as CustomEvent)?.detail?.reason;
+      const detail = (event as CustomEvent)?.detail || {};
+      const reason = detail?.reason;
+      const returnTo = detail?.returnTo;
       setAccessPromptReason(reason === 'feature' ? 'feature' : 'read-limit');
+      if (returnTo?.page) {
+        setPendingNav({page: returnTo.page, data: returnTo.data});
+      }
       setShowAccessPrompt(true);
     };
     if (typeof window !== 'undefined') {

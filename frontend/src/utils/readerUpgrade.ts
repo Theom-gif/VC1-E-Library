@@ -7,6 +7,7 @@ const AUTH_REQUIRED_KEY = 'elibrary_require_auth';
 
 export const MEMBERSHIP_TIER_EVENT = 'elibrary-membership-tier-changed';
 export const AUTH_REQUIRED_EVENT = 'elibrary-auth-required';
+export const PENDING_BOOK_RATING_KEY = 'elibrary_pending_book_rating';
 
 function safeJsonParse<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
@@ -107,8 +108,16 @@ export function shouldRequireAuthForRead(): boolean {
   return hasReachedReadLimit(2);
 }
 
-export function requestAuth(reason: 'read-limit' | 'feature') {
+export function requestAuth(
+  reason: 'read-limit' | 'feature',
+  options?: {
+    returnTo?: {
+      page?: string;
+      data?: unknown;
+    };
+  },
+) {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, {detail: {reason}}));
+    window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT, {detail: {reason, ...options}}));
   }
 }
