@@ -260,7 +260,7 @@ const resolveApiBaseUrl = (): string => {
   const envBase = ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) || '';
   const trimmed = envBase.trim().replace(/\/$/, '');
   const fromClient = String(API_BASE_URL || '').trim().replace(/\/$/, '');
-  return trimmed || fromClient || 'http://127.0.0.1:8000';
+  return trimmed || fromClient || 'https://elibrary.pncproject.site';
 };
 
 const asAbsoluteUrl = (value: string | undefined | null): string => {
