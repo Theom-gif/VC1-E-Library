@@ -125,36 +125,34 @@ function buildListAttempts(params?: ListBooksParams): BookListAttempt[] {
   const attempts: BookListAttempt[] = [];
   const seen = new Set<string>();
 
-  for (const path of ['/api/books', '/api/auth/books']) {
-    const pathAttempts: BookListAttempt[] = [
-      {path, params: normalized, auth: true},
-      {path, params: fallbackPerPage, auth: true},
-      {path, params: withoutPerPage, auth: true},
-      {path, params: withoutPerPage, auth: false},
-    ];
+  const primaryAttempts: BookListAttempt[] = [
+    {path: '/api/books', params: normalized, auth: true},
+    {path: '/api/books', params: fallbackPerPage, auth: true},
+    {path: '/api/books', params: withoutPerPage, auth: true},
+    {path: '/api/books', params: withoutPerPage, auth: false},
+  ];
 
-    for (const attempt of pathAttempts) {
-      const signature = JSON.stringify([
-        attempt.path,
-        attempt.auth !== false,
-        attempt.params?.q ?? null,
-        attempt.params?.category ?? null,
-        attempt.params?.page ?? null,
-        attempt.params?.per_page ?? null,
-        attempt.params?.sort ?? null,
-      ]);
-      if (seen.has(signature)) continue;
-      seen.add(signature);
-      attempts.push(attempt);
-    }
+  for (const attempt of primaryAttempts) {
+    const signature = JSON.stringify([
+      attempt.path,
+      attempt.auth !== false,
+      attempt.params?.q ?? null,
+      attempt.params?.category ?? null,
+      attempt.params?.page ?? null,
+      attempt.params?.per_page ?? null,
+      attempt.params?.sort ?? null,
+    ]);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    attempts.push(attempt);
   }
 
   return attempts;
 }
 
-function shouldRetryListRequest(error: any): boolean {
+function shouldRetryPrimaryListRequest(error: any): boolean {
   const status = Number(error?.status);
-  return [401, 403, 404, 405, 422, 500, 502, 503, 504].includes(status);
+  return [401, 403, 405, 422, 500, 502, 503, 504].includes(status);
 }
 
 // book mapping lives in ./bookMapper
@@ -176,7 +174,16 @@ export const bookService = {
         break;
       } catch (error: any) {
         lastError = error;
-        if (!shouldRetryListRequest(error)) throw error;
+        if (Number(error?.status) === 404) {
+          try {
+            payload = await requestList({path: '/api/auth/books', params: attempt.params, auth: attempt.auth});
+            break;
+          } catch (fallbackError: any) {
+            lastError = fallbackError;
+            if (Number(fallbackError?.status) !== 404) throw fallbackError;
+          }
+        }
+        if (!shouldRetryPrimaryListRequest(error)) throw error;
       }
     }
 

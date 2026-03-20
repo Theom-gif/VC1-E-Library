@@ -305,17 +305,21 @@ const normalizeApiBook = (book: ApiBookPayload, index: number): BookType | null 
 
 export async function hydrateBooksFromApi(): Promise<number> {
   const base = resolveApiBaseUrl();
-  const endpoints = [`${base}/api/auth/books`, `${base}/api/books`];
+  const endpoints = [`${base}/api/books`, `${base}/api/auth/books`];
 
   let payload: any = null;
-  for (const endpoint of endpoints) {
+  for (let index = 0; index < endpoints.length; index += 1) {
+    const endpoint = endpoints[index];
     try {
       const response = await fetch(endpoint, { method: 'GET' });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        if (response.status === 404 && index === 0) continue;
+        break;
+      }
       payload = await response.json();
       if (payload) break;
     } catch {
-      // Try fallback endpoint
+      if (index > 0) break;
     }
   }
 
