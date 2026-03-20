@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Icons } from '../types';
+import { Icons, type BookType } from '../types';
 import BookCard from '../components/BookCard';
 import {useLibrary} from '../context/LibraryContext';
+import bookService from '../service/bookService';
 
 interface CategoriesProps {
   onNavigate: (page: any, data?: any) => void;
@@ -22,13 +23,53 @@ const CATEGORIES = [
 
 const BOOKS_PER_PAGE = 8;
 
+function pickErrorMessage(error: any): string {
+  const message = error?.data?.message || error?.message || 'Unable to load books from backend.';
+  const method = String(error?.method || '').trim();
+  const url = String(error?.url || '').trim();
+  const status = error?.status !== undefined ? String(error.status).trim() : '';
+  const details = [status && `status ${status}`, method, url].filter(Boolean).join(' ');
+  return details ? `${message} (${details})` : message;
+}
+
 export default function Categories({ onNavigate }: CategoriesProps) {
-  const {books} = useLibrary();
+  const {books: libraryBooks} = useLibrary();
+  const [remoteBooks, setRemoteBooks] = useState<BookType[] | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState('All Genres');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const filteredBooks = books.filter(book => {
+  React.useEffect(() => {
+    let isActive = true;
+    setIsFetching(true);
+    setFetchError(null);
+
+    bookService
+      .list({per_page: 50})
+      .then((response) => {
+        if (!isActive) return;
+        setRemoteBooks(response.items || []);
+      })
+      .catch((error) => {
+        if (!isActive) return;
+        setFetchError(pickErrorMessage(error));
+        setRemoteBooks(null);
+      })
+      .finally(() => {
+        if (!isActive) return;
+        setIsFetching(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const sourceBooks = remoteBooks !== null ? remoteBooks : libraryBooks;
+
+  const filteredBooks = sourceBooks.filter((book) => {
     // Category Filter
     const matchesCategory = activeCategory === 'All Genres' || 
       (activeCategory === 'Sci-Fi & Fantasy' && (book.category === 'Sci-Fi' || book.category === 'Fantasy')) ||
@@ -46,6 +87,9 @@ export default function Categories({ onNavigate }: CategoriesProps) {
   const totalPages = Math.ceil(filteredBooks.length / BOOKS_PER_PAGE);
   const startIndex = (currentPage - 1) * BOOKS_PER_PAGE;
   const paginatedBooks = filteredBooks.slice(startIndex, startIndex + BOOKS_PER_PAGE);
+  const totalBooks = filteredBooks.length;
+  const rangeStart = totalBooks === 0 ? 0 : startIndex + 1;
+  const rangeEnd = Math.min(startIndex + BOOKS_PER_PAGE, totalBooks);
 
   // Reset to first page when category or search changes
   React.useEffect(() => {
@@ -102,7 +146,7 @@ export default function Categories({ onNavigate }: CategoriesProps) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-text">{activeCategory}</h2>
-            <p className="text-sm text-text-muted">Showing {startIndex + 1}-{Math.min(startIndex + BOOKS_PER_PAGE, filteredBooks.length)} of {filteredBooks.length} books</p>
+            <p className="text-sm text-text-muted">Showing {rangeStart}-{rangeEnd} of {totalBooks} books</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -117,6 +161,18 @@ export default function Categories({ onNavigate }: CategoriesProps) {
             </div>
           </div>
         </div>
+
+        {isFetching && remoteBooks === null ? (
+          <div className="rounded-2xl bg-surface border border-border px-4 py-3 text-sm text-text-muted">
+            Loading books from backend...
+          </div>
+        ) : null}
+
+        {fetchError ? (
+          <div className="rounded-2xl bg-surface border border-border px-4 py-3 text-sm text-text-muted">
+            {fetchError} Showing cached books if available.
+          </div>
+        ) : null}
 
         {paginatedBooks.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-8">

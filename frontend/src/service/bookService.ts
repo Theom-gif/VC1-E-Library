@@ -183,7 +183,7 @@ export const bookService = {
     for (const attempt of buildListAttempts(params)) {
       try {
         payload = await with404Fallback<ApiEnvelope<any>>(
-          [attempt.path, '/api/auth/books', '/api/reader/books'],
+          [attempt.path, '/api/auth/books', '/api/reader/books', '/author/my-books'],
           (path) => requestList({...attempt, path}),
         );
         break;
@@ -200,7 +200,10 @@ export const bookService = {
     const rawList =
       (Array.isArray((payload as any)?.data) && (payload as any).data) ||
       (Array.isArray((payload as any)?.data?.data) && (payload as any).data.data) ||
+      (Array.isArray((payload as any)?.data?.books) && (payload as any).data.books) ||
+      (Array.isArray((payload as any)?.data?.items) && (payload as any).data.items) ||
       (Array.isArray((payload as any)?.books) && (payload as any).books) ||
+      (Array.isArray((payload as any)?.items) && (payload as any).items) ||
       (Array.isArray((payload as any)?.results) && (payload as any).results) ||
       [];
 

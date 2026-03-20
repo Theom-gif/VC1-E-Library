@@ -31,9 +31,8 @@ export default function Home({
   onCloseAuthOverlay,
   onAuthSuccess,
 }: HomeProps) {
-  const { books, newArrivals, isLoading, error, source, refresh } = useLibrary();
+  const { books, newArrivals, isLoading, error, refresh } = useLibrary();
   const showError = Boolean(error && !isLoading);
-  const showMock = source === 'mock' && !isLoading && !error;
   const canShowAuthOverlay = Boolean(showAuthOverlay && onLogin && onRegister);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -123,19 +122,15 @@ export default function Home({
   };
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-16">
-      {(isLoading || showError || showMock) && (
+      {(isLoading || showError) && (
         <div
-          className={`rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${showError ? 'bg-red-500/10 border-red-500/20' : showMock ? 'bg-orange-500/10 border-orange-500/20' : 'bg-surface border-border'
-            }`}
+          className={`rounded-2xl border px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
+            showError ? 'bg-red-500/10 border-red-500/20' : 'bg-surface border-border'
+          }`}
         >
           <div className="text-sm">
             {isLoading ? (
               <span className="font-semibold text-text">Loading books from backend…</span>
-            ) : showMock ? (
-              <>
-                <span className="font-semibold text-text">Showing mock data.</span>{' '}
-                <span className="text-text-muted">Connect `VITE_API_BASE_URL` to load real books.</span>
-              </>
             ) : showError ? (
               <>
                 <span className="font-semibold text-text">Backend request failed.</span>{' '}

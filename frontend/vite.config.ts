@@ -53,6 +53,11 @@ export default defineConfig(({mode}) => {
           changeOrigin: true,
           secure: false,
         },
+        '/author': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   };

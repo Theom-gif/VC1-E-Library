@@ -41,8 +41,10 @@ export function LibraryProvider({children}: {children: React.ReactNode}) {
       setNewArrivals(response.items.slice(0, 5));
       setSource('api');
     } catch (requestError: any) {
+      // Keep the UI stable when backend is unavailable.
+      console.warn('Library API request failed, falling back to mock data.', requestError);
       setSource('mock');
-      setError(pickErrorMessage(requestError));
+      setError(null);
     } finally {
       setIsLoading(false);
     }
