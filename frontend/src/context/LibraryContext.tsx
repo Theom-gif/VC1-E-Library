@@ -17,7 +17,12 @@ type LibraryState = {
 const LibraryContext = createContext<LibraryState | null>(null);
 
 function pickErrorMessage(error: any): string {
-  return error?.data?.message || error?.message || 'Unable to load library data.';
+  const message = error?.data?.message || error?.message || 'Unable to load library data.';
+  const method = String(error?.method || '').trim();
+  const url = String(error?.url || '').trim();
+  const status = error?.status !== undefined ? String(error.status).trim() : '';
+  const details = [status && `status ${status}`, method, url].filter(Boolean).join(' ');
+  return details ? `${message} (${details})` : message;
 }
 
 export function LibraryProvider({children}: {children: React.ReactNode}) {

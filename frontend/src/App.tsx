@@ -19,8 +19,6 @@ import CoverImage from './components/CoverImage';
 import {
   AUTH_REQUIRED_EVENT,
   getMembershipTier,
-  hasReachedReadLimit,
-  isGuestSession,
   MEMBERSHIP_TIER_EVENT,
   MembershipTier,
 } from './utils/readerUpgrade';
@@ -43,6 +41,7 @@ type AuthenticatedUser = {
   name: string;
   email: string;
   role: 'user' | 'author' | 'admin';
+  memberSince?: string;
 };
 
 type AppProps = {
@@ -73,10 +72,13 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isLightMode, setIsLightMode] = useState(true);
   const [, setBooksSyncVersion] = useState(0);
+  const isGuestUser = authUser?.id === 'guest';
+  const guestRestrictedPages: Page[] = ['favorites', 'downloads', 'settings', 'profile', 'notifications'];
   const [user, setUser] = useState({
-    name: authUser?.name || 'Library User',
+    name: authUser?.id === 'guest' ? 'Guest User' : authUser?.name || 'Library User',
     photo: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
-    membership: membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
+    membership: authUser?.id === 'guest' ? 'Normal User' : membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
+    memberSince: authUser?.id === 'guest' ? '' : authUser?.memberSince || '',
   });
 
   React.useEffect(() => {
@@ -104,16 +106,17 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   React.useEffect(() => {
     setUser((prev) => ({
       ...prev,
-      name: authUser?.name || prev.name,
+      name: authUser?.id === 'guest' ? 'Guest User' : authUser?.name || prev.name,
+      memberSince: authUser?.id === 'guest' ? '' : authUser?.memberSince || prev.memberSince,
     }));
-  }, [authUser?.name]);
+  }, [authUser?.id, authUser?.memberSince, authUser?.name]);
 
   React.useEffect(() => {
     setUser((prev) => ({
       ...prev,
-      membership: membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
+      membership: authUser?.id === 'guest' ? 'Normal User' : membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
     }));
-  }, [membershipTier]);
+  }, [authUser?.id, membershipTier]);
 
   React.useEffect(() => {
     const handleAuthRequired = (event: Event) => {
@@ -148,6 +151,16 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     };
   }, []);
 
+  React.useEffect(() => {
+    if (isGuestUser) return;
+    setShowAccessPrompt(false);
+    setShowHomeAuthOverlay(false);
+    setPendingNav(null);
+    if (authUser?.role === 'user' && membershipTier !== 'reader') {
+      setMembershipTier('reader');
+    }
+  }, [authUser?.id, authUser?.role, isGuestUser, membershipTier]);
+
   const handleAuthRedirect = () => {
     setShowAccessPrompt(false);
     setShowHomeAuthOverlay(true);
@@ -172,10 +185,9 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   ];
 
   const navigateTo = (page: Page, data?: any) => {
-    const readLimitReached = isGuestSession() && hasReachedReadLimit(2);
-    if (readLimitReached && page !== 'home' && page !== 'logout') {
+    if (isGuestUser && guestRestrictedPages.includes(page)) {
       setPendingNav({page, data});
-      setAccessPromptReason('read-limit');
+      setAccessPromptReason('feature');
       setShowAccessPrompt(true);
       return;
     }
@@ -421,13 +433,25 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
               <div 
                 className="size-10 rounded-full bg-primary/20 bg-cover bg-center border-2 border-primary/20 cursor-pointer overflow-hidden"
                 style={{ backgroundImage: `url('${user.photo}')` }}
-                onClick={() => navigateTo('profile')}
+                onClick={() => {
+                  if (isGuestUser) {
+                    handleAuthRedirect();
+                    return;
+                  }
+                  navigateTo('profile');
+                }}
               />
               <button
-                onClick={() => navigateTo('logout')}
+                onClick={() => {
+                  if (isGuestUser) {
+                    handleAuthRedirect();
+                    return;
+                  }
+                  navigateTo('logout');
+                }}
                 className="hidden sm:block rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
               >
-                Logout
+                {isGuestUser ? 'Login' : 'Logout'}
               </button>
             </div>
           </div>
@@ -521,12 +545,12 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
               <p className="text-xs font-bold uppercase tracking-widest">Reader Access Required</p>
             </div>
             <h3 className="mt-4 text-2xl font-bold text-text">
-              {accessPromptReason === 'read-limit' ? 'Reading limit reached.' : 'This feature is for Readers.'}
+              {accessPromptReason === 'read-limit' ? 'Guest reading limit reached.' : 'Choose how you want to continue.'}
             </h3>
             <p className="mt-2 text-sm text-text-muted leading-relaxed">
               {accessPromptReason === 'read-limit'
-                ? 'You have reached the free reading limit. Please register or login to continue reading and unlock full access.'
-                : 'To use this page, please register or login as a Reader. You can continue browsing as a normal user.'}
+                ? 'Guests can open 2 books for free. To continue reading more books, sign in or register as a Reader.'
+                : 'You can keep browsing as a normal guest user, or sign in/register as a Reader to unlock this feature.'}
             </p>
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
               <button
@@ -537,14 +561,14 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 }}
                 className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-bold text-text-muted hover:text-text hover:bg-white/5 transition-all"
               >
-                Not Now
+                Stay as Guest
               </button>
               <button
                 type="button"
                 onClick={handleAuthRedirect}
                 className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 transition-all"
               >
-                Login / Register
+                Register / Login as Reader
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import {FormEvent, ReactNode, useState} from 'react';
-import {ArrowRight, BookOpen, Eye, EyeOff, Lock, Mail, PenTool, Shield, User as UserIcon} from 'lucide-react';
+import {ArrowRight, BookOpen, Eye, EyeOff, Lock, Mail} from 'lucide-react';
 import authService from '../service/authService';
 import {isAuthRequired, setAuthRequired, setMembershipTier} from '../utils/readerUpgrade';
 
@@ -10,6 +10,7 @@ type SessionUser = {
   name: string;
   email: string;
   role: RoleName;
+  memberSince?: string;
 };
 
 type AuthGateProps = {
@@ -30,14 +31,9 @@ type AuthGateProps = {
 
 const SESSION_KEY = 'elibrary_session';
 const LOGOUT_TOKEN_KEY = 'elibrary_last_token';
+const FORCE_LOGIN_KEY = 'elibrary_force_login';
 const AUTO_LOGIN_BYPASS = String((import.meta as any)?.env?.VITE_AUTO_LOGIN_BYPASS || '').trim().toLowerCase() === 'true';
 const ALLOW_GUEST = String((import.meta as any)?.env?.VITE_ALLOW_GUEST ?? 'true').trim().toLowerCase() !== 'false';
-const REGISTER_ROLES: Array<{label: string; role: RoleName; icon: typeof UserIcon}> = [
-  {label: 'USER', role: 'user', icon: UserIcon},
-  {label: 'AUTHOR', role: 'author', icon: PenTool},
-  {label: 'ADMIN', role: 'admin', icon: Shield},
-];
-
 function safeLocalStorageGet(key: string): string | null {
   try {
     if (typeof localStorage === 'undefined') return null;
@@ -65,6 +61,33 @@ function safeLocalStorageRemove(key: string) {
   }
 }
 
+function safeSessionStorageGet(key: string): string | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSessionStorageSet(key: string, value: string) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+function safeSessionStorageRemove(key: string) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 function readSession(): SessionUser | null {
   const raw = safeLocalStorageGet(SESSION_KEY);
   if (!raw) return null;
@@ -81,6 +104,15 @@ function saveSession(user: SessionUser) {
 
 function clearSession() {
   safeLocalStorageRemove(SESSION_KEY);
+}
+
+function shouldForceLogin(): boolean {
+  return String(safeSessionStorageGet(FORCE_LOGIN_KEY) || '') === 'true';
+}
+
+function setForceLogin(value: boolean) {
+  if (value) safeSessionStorageSet(FORCE_LOGIN_KEY, 'true');
+  else safeSessionStorageRemove(FORCE_LOGIN_KEY);
 }
 
 function createGuestSession(): SessionUser {
@@ -123,6 +155,16 @@ function pickString(...values: unknown[]): string {
   return '';
 }
 
+function pickDateString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (!normalized) continue;
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  return undefined;
+}
+
 function extractErrorText(error: any, fallback: string): string {
   const errors = error?.data?.errors;
   if (errors && typeof errors === 'object') {
@@ -142,7 +184,12 @@ function isRoleValidationError(error: any): boolean {
   return text.includes('role');
 }
 
-function toSessionUser(data: any, fallbackEmail: string, selectedRole: RoleName = 'user'): SessionUser {
+function toSessionUser(
+  data: any,
+  fallbackEmail: string,
+  selectedRole: RoleName = 'user',
+  fallbackMemberSince?: string,
+): SessionUser {
   const backendUser = data?.user || data?.data?.user || data?.profile || data?.data?.profile || data || {};
   const first = pickString(backendUser?.firstname, backendUser?.first_name);
   const last = pickString(backendUser?.lastname, backendUser?.last_name);
@@ -160,6 +207,18 @@ function toSessionUser(data: any, fallbackEmail: string, selectedRole: RoleName 
     name: pickString(backendUser?.name, backendUser?.full_name, `${first} ${last}`.trim(), fallbackEmail.split('@')[0], 'User'),
     email: pickString(backendUser?.email, fallbackEmail).toLowerCase(),
     role,
+    memberSince: pickDateString(
+      backendUser?.member_since,
+      backendUser?.registered_at,
+      backendUser?.created_at,
+      backendUser?.joined_at,
+      backendUser?.createdAt,
+      data?.member_since,
+      data?.registered_at,
+      data?.created_at,
+      data?.joined_at,
+      fallbackMemberSince,
+    ),
   };
 }
 
@@ -227,17 +286,22 @@ export default function AuthGate({children}: AuthGateProps) {
   const [error, setError] = useState('');
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(() => {
     const stored = readSession();
-    const authRequired = isAuthRequired();
     if (stored && !isGuestUser(stored)) return stored;
-    if (authRequired) {
+    if (shouldForceLogin()) {
       clearSession();
       return null;
     }
     if (stored && isGuestUser(stored)) return stored;
     if (AUTO_LOGIN_BYPASS || ALLOW_GUEST) {
+      setAuthRequired(false);
+      setForceLogin(false);
       const guest = createGuestSession();
       saveSession(guest);
       return guest;
+    }
+    if (isAuthRequired()) {
+      clearSession();
+      return null;
     }
     return null;
   });
@@ -245,14 +309,13 @@ export default function AuthGate({children}: AuthGateProps) {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [loginForm, setLoginForm] = useState({email: '', password: '', remember: false, role: 'user' as RoleName});
+  const [loginForm, setLoginForm] = useState({email: '', password: '', remember: false});
   const [registerForm, setRegisterForm] = useState({
     firstname: '',
     lastname: '',
     email: '',
     password: '',
     password_confirmation: '',
-    role: 'user' as RoleName,
     agree: false,
   });
 
@@ -265,6 +328,7 @@ export default function AuthGate({children}: AuthGateProps) {
     clearSession();
     setMembershipTier('normal');
     setAuthRequired(true);
+    setForceLogin(true);
     setSessionUser(null);
   };
 
@@ -274,9 +338,11 @@ export default function AuthGate({children}: AuthGateProps) {
       password: payload.password,
       role: payload.role,
     });
-    const user = toSessionUser(response, payload.email, payload.role ?? 'user');
+    const previousMemberSince = readSession()?.memberSince;
+    const user = toSessionUser(response, payload.email, payload.role ?? 'user', previousMemberSince);
     saveSession(user);
     setAuthRequired(false);
+    setForceLogin(false);
     setSessionUser(user);
     if ((payload.role ?? 'user') === 'user') {
       setMembershipTier('reader');
@@ -301,9 +367,10 @@ export default function AuthGate({children}: AuthGateProps) {
       });
       sessionSource = loginResponse;
     }
-    const user = toSessionUser(sessionSource, payload.email, payload.role);
+    const user = toSessionUser(sessionSource, payload.email, payload.role, new Date().toISOString());
     saveSession(user);
     setAuthRequired(false);
+    setForceLogin(false);
     setSessionUser(user);
     if (payload.role === 'user') {
       setMembershipTier('reader');
@@ -318,7 +385,7 @@ export default function AuthGate({children}: AuthGateProps) {
       await login({
         email: loginForm.email,
         password: loginForm.password,
-        role: loginForm.role,
+        role: 'user',
       });
     } catch (requestError: any) {
       setError(extractErrorText(requestError, 'Unable to login. Please check your credentials.'));
@@ -356,7 +423,7 @@ export default function AuthGate({children}: AuthGateProps) {
         email,
         password: registerForm.password,
         password_confirmation: registerForm.password_confirmation,
-        role: registerForm.role,
+        role: 'user',
       });
     } catch (requestError: any) {
       setError(extractErrorText(requestError, 'Unable to register. Please try again.'));
@@ -369,88 +436,76 @@ export default function AuthGate({children}: AuthGateProps) {
 
   if (mode === 'register') {
     return (
-      <main className="min-h-screen bg-[#122024] flex flex-col items-center justify-center p-4 text-[#f8fafc]">
+      <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f7fcfd,_#eef6f7_55%,_#e8f0f2)] dark:bg-[#0f1b1f] flex flex-col items-center justify-center p-4 text-slate-900 dark:text-[#f8fafc]">
         <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
-          <div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4a868f]"><BookOpen size={18} className="text-[#f8fafc]" /></div><span className="text-xl font-bold tracking-tight">E-Library</span></div>
-          <button className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#1d3438] px-4 py-1.5 text-xs font-semibold text-[#94a3b8] hover:text-[#f8fafc]">Support</button>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#5da7b3] shadow-sm">
+              <BookOpen size={18} className="text-white" />
+            </div>
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">E-Library</span>
+          </div>
+          <button className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:text-slate-900 dark:border-white/10 dark:bg-[#1d3438] dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">
+            Support
+          </button>
         </header>
-        <div className="mx-auto w-full max-w-[550px] rounded-[24px] border border-[rgba(255,255,255,0.08)] bg-[#16282b] p-8 shadow-2xl lg:p-10">
-          <div className="mb-8 text-center"><h1 className="text-3xl font-bold">Create Account</h1><p className="mt-2 text-[#94a3b8]">Join our global community of researchers and scholars.</p></div>
+        <div className="mx-auto w-full max-w-[560px] rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_30px_80px_rgba(15,23,42,0.10)] lg:p-10 dark:border-white/10 dark:bg-[#16282b] dark:shadow-2xl">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-[#f8fafc]">Create Account</h1>
+            <p className="mt-2 text-slate-500 dark:text-[#94a3b8]">Join our global community of researchers and scholars.</p>
+          </div>
           <form className="space-y-5" onSubmit={onRegister}>
             <div className="grid grid-cols-2 gap-4">
-              <input type="text" value={registerForm.firstname} onChange={(event) => {setRegisterForm((prev) => ({...prev, firstname: event.target.value})); setError('');}} placeholder="First Name" required className="w-full rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#1d3438] px-4 py-3 text-[#f8fafc] outline-none focus:border-[#4a868f]" />
-              <input type="text" value={registerForm.lastname} onChange={(event) => {setRegisterForm((prev) => ({...prev, lastname: event.target.value})); setError('');}} placeholder="Last Name" required className="w-full rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#1d3438] px-4 py-3 text-[#f8fafc] outline-none focus:border-[#4a868f]" />
+              <input type="text" value={registerForm.firstname} onChange={(event) => {setRegisterForm((prev) => ({...prev, firstname: event.target.value})); setError('');}} placeholder="First Name" required className="w-full rounded-xl border border-slate-200 bg-[#f8fbfc] px-4 py-3 text-slate-900 outline-none focus:border-[#5da7b3] dark:border-white/10 dark:bg-[#1d3438] dark:text-[#f8fafc]" />
+              <input type="text" value={registerForm.lastname} onChange={(event) => {setRegisterForm((prev) => ({...prev, lastname: event.target.value})); setError('');}} placeholder="Last Name" required className="w-full rounded-xl border border-slate-200 bg-[#f8fbfc] px-4 py-3 text-slate-900 outline-none focus:border-[#5da7b3] dark:border-white/10 dark:bg-[#1d3438] dark:text-[#f8fafc]" />
             </div>
-            <div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={18} /><input type="email" value={registerForm.email} onChange={(event) => {setRegisterForm((prev) => ({...prev, email: event.target.value})); setError('');}} placeholder="jane.doe@university.edu" required className="w-full rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#1d3438] py-3 pl-12 pr-4 text-[#f8fafc] outline-none focus:border-[#4a868f]" /></div>
-            <div className="grid grid-cols-3 gap-3">
-              {REGISTER_ROLES.map((item) => {
-                const Icon = item.icon;
-                const active = registerForm.role === item.role;
-                return (
-                  <button key={item.role} type="button" onClick={() => {setRegisterForm((prev) => ({...prev, role: item.role})); setError('');}} className={`flex flex-col items-center justify-center gap-2 rounded-xl border py-3 transition-all ${active ? 'border-[#4a868f] bg-[#1d3438] text-[#4a868f]' : 'border-[rgba(255,255,255,0.05)] bg-[#1d3438]/50 text-[#94a3b8]'}`}>
-                    <Icon size={20} /><span className="text-[10px] font-bold tracking-widest">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#94a3b8]" size={18} /><input type="email" value={registerForm.email} onChange={(event) => {setRegisterForm((prev) => ({...prev, email: event.target.value})); setError('');}} placeholder="jane.doe@university.edu" required className="w-full rounded-xl border border-slate-200 bg-[#f8fbfc] py-3 pl-12 pr-4 text-slate-900 outline-none focus:border-[#5da7b3] dark:border-white/10 dark:bg-[#1d3438] dark:text-[#f8fafc]" /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="relative"><input type={showRegisterPassword ? 'text' : 'password'} value={registerForm.password} onChange={(event) => {setRegisterForm((prev) => ({...prev, password: event.target.value})); setError('');}} placeholder="Password" required className="w-full rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#1d3438] px-4 py-3 pr-12 text-[#f8fafc] outline-none focus:border-[#4a868f]" /><button type="button" onClick={() => setShowRegisterPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#94a3b8]">{showRegisterPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
-              <div className="relative"><input type={showConfirmPassword ? 'text' : 'password'} value={registerForm.password_confirmation} onChange={(event) => {setRegisterForm((prev) => ({...prev, password_confirmation: event.target.value})); setError('');}} placeholder="Confirm Password" required className="w-full rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#1d3438] px-4 py-3 pr-12 text-[#f8fafc] outline-none focus:border-[#4a868f]" /><button type="button" onClick={() => setShowConfirmPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#94a3b8]">{showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
+              <div className="relative"><input type={showRegisterPassword ? 'text' : 'password'} value={registerForm.password} onChange={(event) => {setRegisterForm((prev) => ({...prev, password: event.target.value})); setError('');}} placeholder="Password" required className="w-full rounded-xl border border-slate-200 bg-[#f8fbfc] px-4 py-3 pr-12 text-slate-900 outline-none focus:border-[#5da7b3] dark:border-white/10 dark:bg-[#1d3438] dark:text-[#f8fafc]" /><button type="button" onClick={() => setShowRegisterPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#94a3b8]">{showRegisterPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
+              <div className="relative"><input type={showConfirmPassword ? 'text' : 'password'} value={registerForm.password_confirmation} onChange={(event) => {setRegisterForm((prev) => ({...prev, password_confirmation: event.target.value})); setError('');}} placeholder="Confirm Password" required className="w-full rounded-xl border border-slate-200 bg-[#f8fbfc] px-4 py-3 pr-12 text-slate-900 outline-none focus:border-[#5da7b3] dark:border-white/10 dark:bg-[#1d3438] dark:text-[#f8fafc]" /><button type="button" onClick={() => setShowConfirmPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#94a3b8]">{showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
             </div>
-            <label className="flex items-center gap-2 text-xs text-[#94a3b8]"><input type="checkbox" checked={registerForm.agree} onChange={(event) => setRegisterForm((prev) => ({...prev, agree: event.target.checked}))} className="h-4 w-4 rounded border-[#1d3438] bg-[#1d3438] accent-[#4a868f]" />I agree to the Terms of Service and Privacy Policy.</label>
-            {error && <p className="text-center text-sm text-red-400">{error}</p>}
-            <button type="submit" disabled={isSubmitting} className="w-full rounded-xl bg-[#214046] py-3.5 font-bold text-[#f8fafc] hover:bg-[#2a525a] disabled:opacity-60">{isSubmitting ? 'Creating account...' : 'Sign Up'}</button>
+            <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-[#94a3b8]"><input type="checkbox" checked={registerForm.agree} onChange={(event) => setRegisterForm((prev) => ({...prev, agree: event.target.checked}))} className="h-4 w-4 rounded border-slate-300 bg-white accent-[#5da7b3] dark:border-white/10 dark:bg-[#1d3438]" />I agree to the Terms of Service and Privacy Policy.</label>
+            {error && <p className="text-center text-sm text-red-500">{error}</p>}
+            <button type="submit" disabled={isSubmitting} className="w-full rounded-xl bg-[#5da7b3] py-3.5 font-bold text-white hover:bg-[#4e96a2] disabled:opacity-60 shadow-sm">{isSubmitting ? 'Creating account...' : 'Sign Up'}</button>
           </form>
-          <p className="mt-8 text-center text-sm text-[#94a3b8]">Already have an account? <button type="button" onClick={() => {setMode('login'); setError('');}} className="font-semibold text-[#4a868f] hover:underline">Sign In</button></p>
+          <p className="mt-8 text-center text-sm text-slate-500 dark:text-[#94a3b8]">Already have an account? <button type="button" onClick={() => {setMode('login'); setError('');}} className="font-semibold text-[#4e96a2] hover:underline">Sign In</button></p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#122024] flex flex-col items-center justify-center p-4 text-[#f8fafc]">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f7fcfd,_#eef6f7_55%,_#e8f0f2)] dark:bg-[#0f1b1f] flex flex-col items-center justify-center p-4 text-slate-900 dark:text-[#f8fafc]">
       <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
-        <div className="flex items-center gap-2"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#4a868f]"><BookOpen size={18} className="text-[#f8fafc]" /></div><span className="text-xl font-bold tracking-tight">E-Library</span></div>
-        <button className="text-sm font-medium text-[#94a3b8] hover:text-[#f8fafc]">Help Center</button>
-      </header>
-      <div className="flex w-full max-w-[900px] overflow-hidden rounded-3xl border border-[rgba(255,255,255,0.08)] bg-[#16282b] shadow-2xl">
-        <div className="relative hidden w-1/2 flex-col justify-end p-10 lg:flex">
-          <div className="absolute inset-0 z-0 opacity-40"><div className="h-full w-full bg-[url('https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&q=80')] bg-cover bg-center mix-blend-overlay" /><div className="absolute inset-0 bg-gradient-to-t from-[#16282b] via-transparent to-transparent" /></div>
-          <div className="relative z-10 space-y-4"><BookOpen className="text-[#4a868f]" size={32} /><h1 className="text-4xl font-bold leading-tight">Your gateway to infinite knowledge.</h1><p className="text-[#94a3b8]">Access over 2 million digital volumes, research papers, and archival manuscripts from anywhere in the world.</p></div>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#5da7b3] shadow-sm">
+            <BookOpen size={18} className="text-white" />
+          </div>
+          <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">E-Library</span>
         </div>
-        <div className="w-full bg-[#16282b] p-8 lg:w-1/2 lg:p-12">
-          <div className="mb-8"><h2 className="text-3xl font-bold">Welcome Back</h2><p className="mt-1 text-[#94a3b8]">Sign in to access your digital collection</p></div>
+        <button className="text-sm font-medium text-slate-500 hover:text-slate-900 dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">Help Center</button>
+      </header>
+      <div className="flex w-full max-w-[980px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-[#16282b] dark:shadow-2xl">
+        <div className="relative hidden w-1/2 flex-col justify-end p-10 lg:flex">
+          <div className="absolute inset-0 z-0">
+            <div className="h-full w-full bg-[url('https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&q=80')] bg-cover bg-center" />
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(10,37,46,0.25),rgba(10,37,46,0.55))]" />
+          </div>
+          <div className="relative z-10 space-y-4 text-white">
+            <BookOpen className="text-[#9dd6df]" size={32} />
+            <h1 className="text-4xl font-bold leading-tight">Your gateway to infinite knowledge.</h1>
+            <p className="max-w-md text-white/80">Access over 2 million digital volumes, research papers, and archival manuscripts from anywhere in the world.</p>
+          </div>
+        </div>
+        <div className="w-full bg-white p-8 lg:w-1/2 lg:p-12 dark:bg-[#16282b]">
+          <div className="mb-8"><h2 className="text-3xl font-bold text-slate-900 dark:text-[#f8fafc]">Welcome Back</h2><p className="mt-1 text-slate-500 dark:text-[#94a3b8]">Sign in to access your digital collection</p></div>
           <form className="space-y-5" onSubmit={onLogin}>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[#94a3b8]">Account Role</label>
-              <div className="grid grid-cols-3 gap-3">
-                {REGISTER_ROLES.map((item) => {
-                  const Icon = item.icon;
-                  const active = loginForm.role === item.role;
-                  return (
-                    <button
-                      key={item.role}
-                      type="button"
-                      onClick={() => {
-                        setLoginForm((prev) => ({...prev, role: item.role}));
-                        setError('');
-                      }}
-                      className={`flex flex-col items-center justify-center gap-2 rounded-xl border py-3 transition-all ${active ? 'border-[#4a868f] bg-[#1d3438] text-[#4a868f]' : 'border-[rgba(255,255,255,0.05)] bg-[#1d3438]/50 text-[#94a3b8]'}`}
-                    >
-                      <Icon size={20} />
-                      <span className="text-[10px] font-bold tracking-widest">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div><label className="mb-2 block text-sm font-medium text-[#94a3b8]">Library Email</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={18} /><input type="email" value={loginForm.email} onChange={(event) => {setLoginForm((prev) => ({...prev, email: event.target.value})); setError('');}} placeholder="e.g. academic@university.edu" className="w-full rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#1d3438] py-3 pl-12 pr-4 text-[#f8fafc] focus:border-[#4a868f] focus:outline-none" required /></div></div>
-            <div><div className="mb-2 flex items-center justify-between"><label className="text-sm font-medium text-[#94a3b8]">Password</label><button type="button" className="text-xs font-semibold text-[#4a868f] hover:underline">Forgot Password?</button></div><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={18} /><input type={showLoginPassword ? 'text' : 'password'} value={loginForm.password} onChange={(event) => {setLoginForm((prev) => ({...prev, password: event.target.value})); setError('');}} placeholder="********" className="w-full rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#1d3438] py-3 pl-12 pr-12 text-[#f8fafc] focus:border-[#4a868f] focus:outline-none" required /><button type="button" onClick={() => setShowLoginPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#94a3b8]">{showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
-            <label className="flex items-center gap-2 text-sm text-[#94a3b8]"><input type="checkbox" checked={loginForm.remember} onChange={(event) => setLoginForm((prev) => ({...prev, remember: event.target.checked}))} className="h-4 w-4 rounded border-[#1d3438] bg-[#1d3438] accent-[#4a868f]" />Remember me on this device</label>
-            {error && <div className="rounded-lg bg-red-500/10 p-3 text-sm text-red-400 border border-red-500/20">{error}</div>}
-            <button type="submit" disabled={isSubmitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#4a868f] py-3 font-bold text-[#f8fafc] hover:bg-[#5ba1ab] disabled:opacity-50">{isSubmitting ? 'Signing in...' : 'Sign In to Library'}<ArrowRight size={18} /></button>
+            <div><label className="mb-2 block text-sm font-medium text-slate-500 dark:text-[#94a3b8]">Library Email</label><div className="relative"><Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#94a3b8]" size={18} /><input type="email" value={loginForm.email} onChange={(event) => {setLoginForm((prev) => ({...prev, email: event.target.value})); setError('');}} placeholder="e.g. academic@university.edu" className="w-full rounded-xl border border-slate-200 bg-[#f8fbfc] py-3 pl-12 pr-4 text-slate-900 focus:border-[#5da7b3] focus:outline-none dark:border-white/10 dark:bg-[#1d3438] dark:text-[#f8fafc]" required /></div></div>
+            <div><div className="mb-2 flex items-center justify-between"><label className="text-sm font-medium text-slate-500 dark:text-[#94a3b8]">Password</label><button type="button" className="text-xs font-semibold text-[#4e96a2] hover:underline">Forgot Password?</button></div><div className="relative"><Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#94a3b8]" size={18} /><input type={showLoginPassword ? 'text' : 'password'} value={loginForm.password} onChange={(event) => {setLoginForm((prev) => ({...prev, password: event.target.value})); setError('');}} placeholder="********" className="w-full rounded-xl border border-slate-200 bg-[#f8fbfc] py-3 pl-12 pr-12 text-slate-900 focus:border-[#5da7b3] focus:outline-none dark:border-white/10 dark:bg-[#1d3438] dark:text-[#f8fafc]" required /><button type="button" onClick={() => setShowLoginPassword((prev) => !prev)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#94a3b8]">{showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></div>
+            <label className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#94a3b8]"><input type="checkbox" checked={loginForm.remember} onChange={(event) => setLoginForm((prev) => ({...prev, remember: event.target.checked}))} className="h-4 w-4 rounded border-slate-300 bg-white accent-[#5da7b3] dark:border-white/10 dark:bg-[#1d3438]" />Remember me on this device</label>
+            {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 border border-red-200">{error}</div>}
+            <button type="submit" disabled={isSubmitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#5da7b3] py-3 font-bold text-white hover:bg-[#4e96a2] disabled:opacity-50 shadow-sm">{isSubmitting ? 'Signing in...' : 'Sign In to Library'}<ArrowRight size={18} /></button>
           </form>
-          <div className="mt-8 text-center text-sm text-[#94a3b8]">Not a member yet? <button type="button" onClick={() => {setMode('register'); setError('');}} className="font-semibold text-[#4a868f] hover:underline">Apply for Library Card</button></div>
+          <div className="mt-8 text-center text-sm text-slate-500 dark:text-[#94a3b8]">Not a member yet? <button type="button" onClick={() => {setMode('register'); setError('');}} className="font-semibold text-[#4e96a2] hover:underline">Apply for Library Card</button></div>
         </div>
       </div>
     </main>

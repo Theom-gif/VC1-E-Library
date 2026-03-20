@@ -32,8 +32,8 @@ export default function Home({
   onAuthSuccess,
 }: HomeProps) {
   const { books, newArrivals, isLoading, error, source, refresh } = useLibrary();
-  const showError = Boolean(error && source !== 'mock');
-  const showMock = source === 'mock' && !isLoading;
+  const showError = Boolean(error && !isLoading);
+  const showMock = source === 'mock' && !isLoading && !error;
   const canShowAuthOverlay = Boolean(showAuthOverlay && onLogin && onRegister);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -138,7 +138,7 @@ export default function Home({
               </>
             ) : showError ? (
               <>
-                <span className="font-semibold text-text">Backend not reachable.</span>{' '}
+                <span className="font-semibold text-text">Backend request failed.</span>{' '}
                 <span className="text-text-muted">{error}</span>
               </>
             ) : null}
