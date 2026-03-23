@@ -257,7 +257,10 @@ type ApiBookPayload = {
 };
 
 const resolveApiBaseUrl = (): string => {
-  const envBase = ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) || '';
+  const envBase =
+    ((import.meta as any)?.env?.VITE_API_URL as string | undefined) ||
+    ((import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined) ||
+    '';
   const trimmed = envBase.trim().replace(/\/$/, '');
   const fromClient = String(API_BASE_URL || '').trim().replace(/\/$/, '');
   return trimmed || fromClient || 'https://elibrary.pncproject.site';

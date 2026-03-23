@@ -168,7 +168,7 @@ when `localStorage.token` exists.
 
 The actual file fetch behaves differently:
 
-- The frontend only attaches `Authorization: Bearer <token>` when the returned file URL is the **same origin** as `VITE_API_BASE_URL`
+- The frontend only attaches `Authorization: Bearer <token>` when the returned file URL is the **same origin** as `VITE_API_URL` (or `VITE_API_BASE_URL` for older configs)
 - If you return a cross-origin file URL, it should be public or already signed
 
 Best backend choices:

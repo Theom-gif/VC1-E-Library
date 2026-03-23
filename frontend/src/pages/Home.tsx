@@ -134,7 +134,7 @@ export default function Home({
             ) : showMock ? (
               <>
                 <span className="font-semibold text-text">Showing mock data.</span>{' '}
-                <span className="text-text-muted">Connect `VITE_API_BASE_URL` to load real books.</span>
+                <span className="text-text-muted">Connect `VITE_API_URL` to load real books.</span>
               </>
             ) : showError ? (
               <>

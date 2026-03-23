@@ -13,10 +13,10 @@ The UI pages in `frontend/src/pages/` currently render from mock data (`MOCK_BOO
 Create `frontend/.env.local`:
 
 ```bash
-VITE_API_BASE_URL="https://elibrary.pncproject.site"
+VITE_API_URL="https://elibrary.pncproject.site"
 ```
 
-`apiClient` will call `${VITE_API_BASE_URL}/...` and automatically attach:
+`apiClient` will call `${VITE_API_URL}/...` (or `VITE_API_BASE_URL` for older configs) and automatically attach:
 
 - `Authorization: Bearer <token>` when `localStorage.token` exists
 

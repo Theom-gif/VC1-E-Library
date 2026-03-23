@@ -8,7 +8,7 @@
 2. Configure backend URL (create `frontend/.env.local`):
 
 ```bash
-VITE_API_BASE_URL="https://elibrary.pncproject.site"
+VITE_API_URL="https://elibrary.pncproject.site"
 VITE_API_PROXY_TARGET="http://localhost:8000"
 ```
 
@@ -43,7 +43,7 @@ Minimum fields required for the UI:
 
 Notes:
 
-- `cover_image_url` can be absolute or relative. If it's relative (like `storage/...`), the UI will normalize it using `VITE_API_BASE_URL`.
+- `cover_image_url` can be absolute or relative. If it's relative (like `storage/...`), the UI will normalize it using `VITE_API_URL` (or `VITE_API_BASE_URL` for older configs).
 - Optional fields like `progress` / `timeLeft` are not required by the backend.
 
 ### Public endpoints (reader)

@@ -32,7 +32,7 @@ function defaultBaseUrl(): string {
     const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
 
     // In dev (Vite), prefer same-origin so the Vite proxy can forward /api and /storage
-    // without CORS headaches. Override with VITE_API_BASE_URL if your backend is elsewhere.
+    // without CORS headaches. Override with VITE_API_URL (or VITE_API_BASE_URL) if your backend is elsewhere.
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') return origin;
     if ((import.meta as any)?.env?.DEV && isIpv4) return origin;
 
@@ -51,7 +51,11 @@ function defaultBaseUrl(): string {
   return productionBaseUrl;
 }
 
-const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || defaultBaseUrl()).replace(/\/+$/, '');
+const API_BASE_URL = String(
+  import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
+    defaultBaseUrl(),
+).replace(/\/+$/, '');
 
 function buildUrl(path: string): string {
   if (!path) return API_BASE_URL || '';
@@ -165,7 +169,7 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
           : isAbortError
             ? `Request was aborted (${method} ${url})`
             : fetchError?.message ||
-              `Failed to fetch (${method} ${url}). Check VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
+              `Failed to fetch (${method} ${url}). Check VITE_API_URL/VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
       );
       if (didTimeout) error.status = 408;
       error.data = fetchError;
