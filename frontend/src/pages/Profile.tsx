@@ -148,8 +148,12 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
         setReadingActivityTotal(
           READING_ACTIVITY_FALLBACK[readingActivityRange].reduce((sum, item) => sum + item.minutes, 0),
         );
-        if (Number(error?.status) !== 404) {
+        const status = Number(error?.status);
+        const canShowDetails = Boolean((import.meta as any)?.env?.DEV);
+        if (canShowDetails && status !== 404) {
           setReadingActivityError(error?.data?.message || error?.message || 'Unable to load reading activity.');
+        } else {
+          setReadingActivityError('');
         }
       })
       .finally(() => {
@@ -179,8 +183,12 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
       .catch((error: any) => {
         if (!alive) return;
         setCurrentlyReading(books.slice(0, 2));
-        if (Number(error?.status) !== 404) {
+        const status = Number(error?.status);
+        const canShowDetails = Boolean((import.meta as any)?.env?.DEV);
+        if (canShowDetails && status !== 404) {
           setCurrentlyReadingError(error?.data?.message || error?.message || 'Unable to load currently reading books.');
+        } else {
+          setCurrentlyReadingError('');
         }
       })
       .finally(() => {

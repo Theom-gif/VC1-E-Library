@@ -6,11 +6,21 @@ const extractToken = (data) =>
 const storeToken = (token) => {
   if (token) {
     localStorage.setItem('token', token);
+    try {
+      window.dispatchEvent(new CustomEvent('elibrary-token-changed', {detail: token}));
+    } catch {
+      // ignore
+    }
   }
 };
 
 const clearToken = () => {
   localStorage.removeItem('token');
+  try {
+    window.dispatchEvent(new CustomEvent('elibrary-token-changed', {detail: null}));
+  } catch {
+    // ignore
+  }
 };
 
 export const authService = {

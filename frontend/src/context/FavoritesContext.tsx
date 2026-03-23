@@ -2,6 +2,7 @@ import * as React from 'react';
 import type {BookType} from '../types';
 import favoriteService from '../service/favoriteService';
 import {toBookType} from '../service/bookMapper';
+import {requestAuth} from '../utils/readerUpgrade';
 
 type FavoritesState = {
   favorites: BookType[];
@@ -18,6 +19,12 @@ const FavoritesContext = React.createContext<FavoritesState | null>(null);
 
 const STORAGE_KEY = 'elibrary_favorites_v1';
 
+function normalizeBookId(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return raw.startsWith('api-') ? raw.slice(4) : raw;
+}
+
 function safeLocalStorageGet(key: string): string | null {
   try {
     if (typeof localStorage === 'undefined') return null;
@@ -31,6 +38,15 @@ function safeLocalStorageSet(key: string, value: string) {
   try {
     if (typeof localStorage === 'undefined') return;
     localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+function safeLocalStorageRemove(key: string) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.removeItem(key);
   } catch {
     // ignore
   }
@@ -73,7 +89,7 @@ function uniqueById(books: BookType[]): BookType[] {
   const seen = new Set<string>();
   const out: BookType[] = [];
   for (const book of books) {
-    const id = String(book?.id || '').trim();
+    const id = normalizeBookId(book?.id);
     if (!id || seen.has(id)) continue;
     seen.add(id);
     out.push(book);
@@ -82,11 +98,15 @@ function uniqueById(books: BookType[]): BookType[] {
 }
 
 function pickErrorMessage(error: any): string {
+  const status = Number(error?.status);
+  if (status === 401) {
+    return 'Session expired. Favorites are saved locally on this device. Please login again to sync with your account.';
+  }
   const message = error?.data?.message || error?.message || 'Unable to load favorites.';
   const method = String(error?.method || '').trim();
   const url = String(error?.url || '').trim();
-  const status = error?.status !== undefined ? String(error.status).trim() : '';
-  const details = [status && `status ${status}`, method, url].filter(Boolean).join(' ');
+  const statusLabel = error?.status !== undefined ? String(error.status).trim() : '';
+  const details = [statusLabel && `status ${statusLabel}`, method, url].filter(Boolean).join(' ');
   return details ? `${message} (${details})` : message;
 }
 
@@ -95,32 +115,65 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const favoriteIds = React.useMemo(() => new Set(favorites.map((b) => String(b.id))), [favorites]);
+  const favoriteIds = React.useMemo(() => new Set(favorites.map((b) => normalizeBookId(b?.id))), [favorites]);
+
+  const handleUnauthenticated = React.useCallback((requestError: any) => {
+    const status = Number(requestError?.status);
+    if (status !== 401) return false;
+    // Token exists but backend rejects it. Treat as logged-out and keep local favorites.
+    safeLocalStorageRemove('token');
+    setError(pickErrorMessage(requestError));
+    requestAuth('feature');
+    return true;
+  }, []);
 
   const refresh = React.useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
+      if (!hasToken()) {
+        const local = readLocalFavorites();
+        setFavorites(local);
+        writeLocalFavorites(local);
+        return;
+      }
       const payload = await favoriteService.list();
       const rawList = extractArray(payload);
       const mapped = uniqueById(rawList.map((item) => toBookType(item)));
-      setFavorites(mapped);
-      writeLocalFavorites(mapped);
+      const local = readLocalFavorites();
+      const merged = uniqueById([...mapped, ...local]);
+      setFavorites(merged);
+      writeLocalFavorites(merged);
     } catch (requestError: any) {
       const local = readLocalFavorites();
       setFavorites(local);
+      if (handleUnauthenticated(requestError)) return;
       setError(pickErrorMessage(requestError));
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [handleUnauthenticated]);
 
   React.useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  React.useEffect(() => {
+    const handler = () => {
+      void refresh();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('elibrary-token-changed', handler as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('elibrary-token-changed', handler as EventListener);
+      }
+    };
+  }, [refresh]);
+
   const add = React.useCallback(async (book: BookType) => {
-    const id = String(book?.id || '').trim();
+    const id = normalizeBookId(book?.id);
     if (!id) return;
     if (favoriteIds.has(id)) return;
 
@@ -129,6 +182,7 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
       setFavorites(next);
       writeLocalFavorites(next);
       setError('Login required to save favorites to your account.');
+      requestAuth('feature');
       return;
     }
 
@@ -139,39 +193,36 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
     try {
       await favoriteService.add(id);
     } catch (requestError: any) {
-      const rolledBack = favorites;
-      setFavorites(rolledBack);
-      writeLocalFavorites(rolledBack);
+      if (handleUnauthenticated(requestError)) return;
       setError(pickErrorMessage(requestError));
     }
-  }, [favoriteIds, favorites]);
+  }, [favoriteIds, favorites, handleUnauthenticated]);
 
   const remove = React.useCallback(async (bookId: string) => {
-    const id = String(bookId || '').trim();
+    const id = normalizeBookId(bookId);
     if (!id) return;
     if (!favoriteIds.has(id)) return;
 
     if (!hasToken()) {
-      const next = favorites.filter((b) => String(b.id) !== id);
+      const next = favorites.filter((b) => normalizeBookId(b?.id) !== id);
       setFavorites(next);
       writeLocalFavorites(next);
       setError('Login required to save favorites to your account.');
+      requestAuth('feature');
       return;
     }
 
-    const next = favorites.filter((b) => String(b.id) !== id);
+    const next = favorites.filter((b) => normalizeBookId(b?.id) !== id);
     setFavorites(next);
     writeLocalFavorites(next);
 
     try {
       await favoriteService.remove(id);
     } catch (requestError: any) {
-      const rolledBack = favorites;
-      setFavorites(rolledBack);
-      writeLocalFavorites(rolledBack);
+      if (handleUnauthenticated(requestError)) return;
       setError(pickErrorMessage(requestError));
     }
-  }, [favoriteIds, favorites]);
+  }, [favoriteIds, favorites, handleUnauthenticated]);
 
   const toggle = React.useCallback(async (book: BookType) => {
     const id = String(book?.id || '').trim();
@@ -186,7 +237,7 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
       isLoading,
       error,
       refresh,
-      isFavorite: (bookId: string) => favoriteIds.has(String(bookId || '').trim()),
+      isFavorite: (bookId: string) => favoriteIds.has(normalizeBookId(bookId)),
       add,
       remove,
       toggle,

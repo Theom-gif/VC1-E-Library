@@ -21,7 +21,15 @@ export const favoriteService = {
 
   add: (bookId: string) =>
     with404Fallback(['/api/favorites', '/api/auth/favorites'], (path) =>
-      apiClient.post(path, {book_id: bookId}, {headers: {Accept: 'application/json'}}),
+      apiClient.post(
+        path,
+        {
+          book_id: bookId,
+          bookId,
+          id: bookId,
+        },
+        {headers: {Accept: 'application/json'}},
+      ),
     ),
 
   remove: (bookId: string) =>
