@@ -112,7 +112,7 @@ function normalizeComment(raw: any, fallbackIndex: number): Comment {
     id,
     user: pickString(user?.name, source?.user_name, source?.username, 'Library User'),
     avatar: avatar || 'https://picsum.photos/seed/user/100/100',
-    text: pickString(source?.text, source?.comment, source?.body),
+    text: pickString(source?.text, source?.content, source?.comment, source?.body, source?.message),
     time: formatRelativeTime(createdAt) || createdAt || '',
     likes: Math.max(0, Math.round(pickNumber(source?.likes, source?.likes_count, source?.like_count))),
     replies: Math.max(0, Math.round(pickNumber(source?.replies, source?.replies_count, source?.reply_count))),
