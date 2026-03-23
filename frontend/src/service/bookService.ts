@@ -37,6 +37,13 @@ export type ApiDownloadRecord = {
   updated_at?: string;
 };
 
+export type CreateDownloadRecordPayload = {
+  status?: string;
+  size_bytes?: number;
+  file_name?: string;
+  mime_type?: string;
+};
+
 async function with404Fallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
   let lastError: any;
   for (const path of paths) {
@@ -158,10 +165,14 @@ function buildListAttempts(params?: ListBooksParams): BookListAttempt[] {
   const seen = new Set<string>();
 
   const primaryAttempts: BookListAttempt[] = [
+    // Prefer unauthenticated requests first to avoid CORS preflight failures when a token exists.
+    // Most backends expose /api/books publicly for the reader browsing UI.
+    {path: '/api/books', params: normalized, auth: false},
+    {path: '/api/books', params: fallbackPerPage, auth: false},
+    {path: '/api/books', params: withoutPerPage, auth: false},
     {path: '/api/books', params: normalized, auth: true},
     {path: '/api/books', params: fallbackPerPage, auth: true},
     {path: '/api/books', params: withoutPerPage, auth: true},
-    {path: '/api/books', params: withoutPerPage, auth: false},
   ];
 
   for (const attempt of primaryAttempts) {
@@ -184,6 +195,8 @@ function buildListAttempts(params?: ListBooksParams): BookListAttempt[] {
 
 function shouldRetryPrimaryListRequest(error: any): boolean {
   const status = Number(error?.status);
+  // Network errors (CORS/DNS/SSL/etc) don't have a status. Retry other fallbacks.
+  if (!Number.isFinite(status)) return true;
   return [401, 403, 405, 408, 422, 500, 502, 503, 504].includes(status);
 }
 
@@ -281,10 +294,23 @@ export const bookService = {
       headers: {Accept: 'application/json'},
     })) as ApiEnvelope<ApiDownloadRecord[]>,
 
-  createDownloadRecord: async (id: string) =>
-    (await apiClient.post(`/api/books/${encodeURIComponent(normalizeBookId(id))}/downloads`, undefined, {
-      headers: {Accept: 'application/json'},
-    })) as ApiEnvelope<ApiDownloadRecord>,
+  createDownloadRecord: async (id: string, payload?: CreateDownloadRecordPayload) =>
+    (await withResolverFallback<ApiEnvelope<ApiDownloadRecord>>(
+      [
+        `/api/books/${encodeURIComponent(normalizeBookId(id))}/downloads`,
+        '/api/downloads',
+      ],
+      (path) => {
+        const body =
+          path === '/api/downloads'
+            ? {
+                book_id: normalizeBookId(id),
+                ...(payload || {}),
+              }
+            : payload;
+        return apiClient.post(path, body, {headers: {Accept: 'application/json'}}) as any;
+      },
+    )) as ApiEnvelope<ApiDownloadRecord>,
 
   /**
    * Returns a URL that can be opened in a new tab for "Read Now".

@@ -148,11 +148,14 @@ async function resolveDownloadUrl(bookId: string): Promise<string> {
   return ensureAbsoluteUrl(url);
 }
 
-async function syncDownloadRecordToBackend(bookId: string): Promise<void> {
+async function syncDownloadRecordToBackend(
+  bookId: string,
+  payload?: Parameters<typeof bookService.createDownloadRecord>[1],
+): Promise<void> {
   const normalizedBookId = normalizeBackendBookId(bookId);
   if (!normalizedBookId || !hasAuthToken()) return;
   try {
-    await bookService.createDownloadRecord(normalizedBookId);
+    await bookService.createDownloadRecord(normalizedBookId, payload);
   } catch (error: any) {
     const status = Number(error?.status);
     // The backend may already log via POST /api/books/{id}/download.
@@ -302,6 +305,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
 
       try {
         const downloadUrl = await resolveDownloadUrl(bookId);
+        void syncDownloadRecordToBackend(bookId, {status: 'started'});
         const {blob, mimeType, fileName} = await fetchBlobWithProgress(downloadUrl, controller, (snapshot) => {
           setActiveByBookId((prev) => {
             const current = prev[bookId];
@@ -336,7 +340,12 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
         };
 
         await putDownload(record);
-        await syncDownloadRecordToBackend(bookId);
+        await syncDownloadRecordToBackend(bookId, {
+          status: 'completed',
+          size_bytes: blob.size,
+          file_name: fileName || undefined,
+          mime_type: mimeType,
+        });
         await refresh();
       } catch (error: any) {
         const aborted = controller.signal.aborted;
