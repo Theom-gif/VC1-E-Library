@@ -206,25 +206,82 @@ function buildProfileJsonPayload(payload: {
   return body;
 }
 
+function buildProfileFormData(payload: {
+  firstname?: string;
+  lastname?: string;
+  bio?: string;
+  facebook_url?: string;
+  avatar?: string | null;
+  avatarFile?: File | null;
+  methodOverride?: 'PATCH' | 'PUT';
+}) {
+  const form = new FormData();
+  const firstname = pickString(payload?.firstname);
+  const lastname = pickString(payload?.lastname);
+  const bio = String(payload?.bio || '').trim();
+  const facebookUrl = String(payload?.facebook_url || '').trim();
+  const avatar = String(payload?.avatar || '').trim();
+  const methodOverride = payload?.methodOverride;
+
+  if (methodOverride) form.append('_method', methodOverride);
+  if (firstname) form.append('firstname', firstname);
+  if (lastname) form.append('lastname', lastname);
+  if (bio) form.append('bio', bio);
+  if (facebookUrl) form.append('facebook_url', facebookUrl);
+  if (avatar) form.append('avatar', avatar);
+
+  if (payload?.avatarFile instanceof File) {
+    // Common backend conventions: accept either `avatar` or `photo` for a profile image file.
+    form.append('avatar', payload.avatarFile, payload.avatarFile.name);
+    form.append('photo', payload.avatarFile, payload.avatarFile.name);
+  }
+
+  return form;
+}
+
 async function updateProfileWithFallback(payload: {
   firstname?: string;
   lastname?: string;
   bio?: string;
   facebook_url?: string;
   avatar?: string | null;
+  avatarFile?: File | null;
 }) {
-  const body = buildProfileJsonPayload(payload);
   const paths = ['/api/me/profile', '/api/me'];
   let lastError: any;
 
+  const hasAvatarFile = payload?.avatarFile instanceof File;
+  const body = hasAvatarFile ? null : buildProfileJsonPayload(payload);
+
   for (const path of paths) {
     try {
-      return await apiClient.patch(path, body, {headers: {Accept: 'application/json'}});
+      return await apiClient.patch(
+        path,
+        hasAvatarFile ? buildProfileFormData(payload) : body,
+        {headers: {Accept: 'application/json'}},
+      );
     } catch (error: any) {
       const status = Number(error?.status);
       if (status === 404) {
         lastError = error;
         continue;
+      }
+      // Laravel/PHP commonly does not parse multipart bodies for PATCH/PUT, so retry as POST with _method override.
+      if (hasAvatarFile && (status === 405 || status === 415)) {
+        try {
+          return await apiClient.post(
+            path,
+            buildProfileFormData({...payload, methodOverride: 'PATCH'}),
+            {headers: {Accept: 'application/json'}},
+          );
+        } catch (postError: any) {
+          const postStatus = Number(postError?.status);
+          if (postStatus === 404) {
+            lastError = postError;
+            continue;
+          }
+          lastError = postError;
+        }
       }
       if (status !== 405) {
         throw error;
@@ -235,10 +292,31 @@ async function updateProfileWithFallback(payload: {
 
   for (const path of paths) {
     try {
-      return await apiClient.put(path, body, {headers: {Accept: 'application/json'}});
+      return await apiClient.put(
+        path,
+        hasAvatarFile ? buildProfileFormData(payload) : body,
+        {headers: {Accept: 'application/json'}},
+      );
     } catch (error: any) {
-      if (Number(error?.status) !== 404) throw error;
-      lastError = error;
+      const status = Number(error?.status);
+      if (status === 404) {
+        lastError = error;
+        continue;
+      }
+      if (hasAvatarFile && (status === 405 || status === 415)) {
+        try {
+          return await apiClient.post(
+            path,
+            buildProfileFormData({...payload, methodOverride: 'PUT'}),
+            {headers: {Accept: 'application/json'}},
+          );
+        } catch (postError: any) {
+          if (Number(postError?.status) !== 404) throw postError;
+          lastError = postError;
+        }
+        continue;
+      }
+      throw error;
     }
   }
 
@@ -264,6 +342,7 @@ export const profileService = {
     bio?: string;
     facebook_url?: string;
     avatar?: string | null;
+    avatarFile?: File | null;
   }): Promise<ProfileSummary> => {
     const response = await updateProfileWithFallback(payload);
     return normalizeProfileSummary(response);

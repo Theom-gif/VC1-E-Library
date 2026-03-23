@@ -5,6 +5,7 @@ import {useLibrary} from '../context/LibraryContext';
 import {useFavorites} from '../context/FavoritesContext';
 import bookService from '../service/bookService';
 import ratingService, {type BookRatingsSummary} from '../service/ratingService';
+import reviewService from '../service/reviewService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
 import {PENDING_BOOK_RATING_KEY, requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
@@ -23,6 +24,9 @@ interface Comment {
   likes: number;
   replies: number;
   rating: number;
+  canEdit?: boolean;
+  canDelete?: boolean;
+  likedByMe?: boolean;
 }
 
 function normalizeBackendBookId(value: unknown): string {
@@ -46,6 +50,76 @@ function fallbackRatingsSummary(book: BookType): BookRatingsSummary {
     total_ratings: Number(book?.reviews) || 0,
     distribution: {'1': 0, '2': 0, '3': 0, '4': 0, '5': 0},
     user_rating: null,
+  };
+}
+
+function pickArray<T = any>(...values: unknown[]): T[] {
+  for (const value of values) {
+    if (Array.isArray(value)) return value as T[];
+  }
+  return [];
+}
+
+function pickObject(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' ? (value as Record<string, any>) : {};
+}
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+function pickNumber(...values: unknown[]): number {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && !Number.isNaN(n)) return n;
+  }
+  return 0;
+}
+
+function formatRelativeTime(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const date = new Date(raw);
+  const ms = date.getTime();
+  if (Number.isNaN(ms)) return raw;
+
+  const diffSeconds = Math.round((Date.now() - ms) / 1000);
+  if (diffSeconds < 10) return 'Just now';
+  if (diffSeconds < 60) return `${diffSeconds} seconds ago`;
+
+  const diffMinutes = Math.round(diffSeconds / 60);
+  if (diffMinutes < 60) return diffMinutes === 1 ? '1 minute ago' : `${diffMinutes} minutes ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return diffHours === 1 ? '1 hour ago' : `${diffHours} hours ago`;
+
+  const diffDays = Math.round(diffHours / 24);
+  return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+}
+
+function normalizeComment(raw: any, fallbackIndex: number): Comment {
+  const source = pickObject(raw);
+  const user = pickObject(source?.user);
+  const id = pickString(source?.id, source?.review_id, source?.comment_id, `local-${fallbackIndex + 1}`);
+  const avatar = pickString(user?.avatar, user?.photo, source?.avatar, source?.user_avatar);
+  const createdAt = pickString(source?.created_at, source?.createdAt, source?.time);
+  const rating = pickNumber(source?.rating, source?.stars, source?.score);
+  return {
+    id,
+    user: pickString(user?.name, source?.user_name, source?.username, 'Library User'),
+    avatar: avatar || 'https://picsum.photos/seed/user/100/100',
+    text: pickString(source?.text, source?.comment, source?.body),
+    time: formatRelativeTime(createdAt) || createdAt || '',
+    likes: Math.max(0, Math.round(pickNumber(source?.likes, source?.likes_count, source?.like_count))),
+    replies: Math.max(0, Math.round(pickNumber(source?.replies, source?.replies_count, source?.reply_count))),
+    rating: Math.max(0, Math.min(5, rating || 0)),
+    canEdit: Boolean(source?.can_edit ?? source?.canEdit),
+    canDelete: Boolean(source?.can_delete ?? source?.canDelete),
+    likedByMe: Boolean(source?.liked_by_me ?? source?.likedByMe),
   };
 }
 
@@ -105,35 +179,43 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const [selectedRating, setSelectedRating] = React.useState<number>(0);
   const [isLoadingRatings, setIsLoadingRatings] = React.useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = React.useState(false);
-  const [comments, setComments] = React.useState<Comment[]>([
-    {
-      id: '1',
-      user: 'Sarah Miller',
-      avatar: 'https://picsum.photos/seed/sarah/100/100',
-      text: 'Absolutely loved the character development in this one. The pacing was perfect and the ending was completely unexpected!',
-      time: '2 hours ago',
-      likes: 24,
-      replies: 12,
-      rating: 5.0
+  const [isLoadingComments, setIsLoadingComments] = React.useState(false);
+  const [isSubmittingComment, setIsSubmittingComment] = React.useState(false);
+  const [commentsError, setCommentsError] = React.useState('');
+  const [comments, setComments] = React.useState<Comment[]>([]);
+
+  const handlePostComment = async () => {
+    const nextText = commentText.trim();
+    if (!nextText) return;
+
+    const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    if (!readToken()) {
+      requestAuth('feature', {
+        returnTo: {
+          page: 'book-details',
+          data: currentBook,
+        },
+      });
+      return;
     }
-  ]);
 
-  const handlePostComment = () => {
-    if (!commentText.trim()) return;
-
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      user: 'Alex Johnson',
-      avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI',
-      text: commentText,
-      time: 'Just now',
-      likes: 0,
-      replies: 0,
-      rating: 5.0
-    };
-
-    setComments((prev) => [newComment, ...prev]);
-    setCommentText('');
+    setIsSubmittingComment(true);
+    setCommentsError('');
+    try {
+      const response = await reviewService.createForBook(normalizedBookId, {
+        text: nextText,
+        rating: Math.max(1, Math.min(5, Math.round(selectedRating || 5))),
+      });
+      const source = pickObject(response);
+      const created = source?.data ?? source;
+      const createdComment = normalizeComment(created, 0);
+      setComments((prev) => [createdComment, ...prev.filter((c) => c.id !== createdComment.id)]);
+      setCommentText('');
+    } catch (error: any) {
+      setCommentsError(error?.data?.message || error?.message || 'Unable to post your comment.');
+    } finally {
+      setIsSubmittingComment(false);
+    }
   };
 
   const handleEditStart = (comment: Comment) => {
@@ -145,9 +227,32 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     const nextText = editingText.trim();
     if (!nextText) return;
 
-    setComments((prev) => prev.map((c) => (c.id === id ? { ...c, text: nextText } : c)));
-    setEditingCommentId(null);
-    setEditingText('');
+    if (!readToken()) {
+      requestAuth('feature', {
+        returnTo: {
+          page: 'book-details',
+          data: currentBook,
+        },
+      });
+      return;
+    }
+
+    setCommentsError('');
+    void reviewService
+      .update(id, {text: nextText})
+      .then((response: any) => {
+        const source = pickObject(response);
+        const updated = source?.data ?? source;
+        const normalized = normalizeComment(updated, 0);
+        setComments((prev) =>
+          prev.map((c) => (c.id === id ? {...c, text: normalized.text || nextText, rating: normalized.rating || c.rating} : c)),
+        );
+        setEditingCommentId(null);
+        setEditingText('');
+      })
+      .catch((error: any) => {
+        setCommentsError(error?.data?.message || error?.message || 'Unable to update this comment.');
+      });
   };
 
   const handleEditCancel = () => {
@@ -198,6 +303,36 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     setSelectedRating(pending.rating);
     void submitRating(pending.rating);
   }, [currentBook.id, isSubmittingRating]);
+
+  React.useEffect(() => {
+    const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    let alive = true;
+
+    setIsLoadingComments(true);
+    setCommentsError('');
+
+    void reviewService
+      .listForBook(normalizedBookId, {page: 1, per_page: 10, sort: 'newest'})
+      .then((payload: any) => {
+        if (!alive) return;
+        const source = pickObject(payload);
+        const items = pickArray(source?.data, source?.results, source?.items, payload);
+        setComments(items.map((item, index) => normalizeComment(item, index)));
+      })
+      .catch((error: any) => {
+        if (!alive) return;
+        if (Number(error?.status) !== 404) {
+          setCommentsError(error?.data?.message || error?.message || 'Unable to load comments.');
+        }
+      })
+      .finally(() => {
+        if (alive) setIsLoadingComments(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [currentBook.id]);
 
   const submitRating = async (nextRating: number) => {
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
@@ -525,8 +660,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
           <div className="space-y-8">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold text-text">Community Discussion</h3>
-              <span className="text-xs font-bold text-text-muted uppercase tracking-widest">{comments.length} Comments</span>
+              <span className="text-xs font-bold text-text-muted uppercase tracking-widest">
+                {isLoadingComments ? 'Loading...' : `${comments.length} Comments`}
+              </span>
             </div>
+            {commentsError ? <p className="text-sm font-semibold text-red-500">{commentsError}</p> : null}
 
             {/* Comment Input */}
             <div className="space-y-4">
@@ -543,11 +681,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                   />
                   <div className="flex justify-end">
                     <button 
-                      onClick={handlePostComment}
-                      disabled={!commentText.trim()}
+                      onClick={() => void handlePostComment()}
+                      disabled={!commentText.trim() || isSubmittingComment}
                       className="bg-primary text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-primary/90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
                     >
-                      Post Comment
+                      {isSubmittingComment ? 'Posting...' : 'Post Comment'}
                     </button>
                   </div>
                 </div>
@@ -556,6 +694,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
 
             {/* Comments List */}
             <div className="space-y-4">
+              {isLoadingComments ? (
+                <p className="text-sm text-text-muted">Loading comments...</p>
+              ) : !comments.length ? (
+                <p className="text-sm text-text-muted">No comments yet. Be the first to comment.</p>
+              ) : null}
               {comments.map((comment) => (
                 <div key={comment.id} className="p-6 rounded-2xl bg-surface border border-border space-y-4 hover:border-primary/30 transition-all">
                   <div className="flex items-center justify-between">
@@ -569,7 +712,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {comment.user === 'Alex Johnson' && editingCommentId !== comment.id && (
+                      {(comment.canEdit || comment.user === 'Alex Johnson') && editingCommentId !== comment.id && (
                         <button 
                           onClick={() => handleEditStart(comment)}
                           className="text-[10px] font-bold text-primary uppercase tracking-widest hover:underline"

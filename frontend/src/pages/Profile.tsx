@@ -4,6 +4,7 @@ import {motion} from 'motion/react';
 import {useLibrary} from '../context/LibraryContext';
 import CoverImage from '../components/CoverImage';
 import profileService, {type ReadingActivityBucket, type ReadingActivityRange} from '../service/profileService';
+import {resizeImageFileToDataUrl} from '../utils/image';
 
 interface ProfileProps {
   user: {name: string; photo: string; membership: string; memberSince?: string};
@@ -213,7 +214,7 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
       const saved = await profileService.updateProfile({
         firstname,
         lastname,
-        avatar: avatarForBackend || undefined,
+        ...(selectedPhotoFile ? {avatarFile: selectedPhotoFile} : {avatar: avatarForBackend || undefined}),
       });
       let persisted = saved;
       try {
@@ -276,16 +277,15 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
 
     setSelectedPhotoFile(file);
     setSaveError('');
+    setPhotoError('');
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setEditPhoto(String(reader.result || ''));
-      setPhotoError('');
-    };
-    reader.onerror = () => {
-      setPhotoError('Unable to load this image.');
-    };
-    reader.readAsDataURL(file);
+    void resizeImageFileToDataUrl(file, {maxWidth: 512, maxHeight: 512, mimeType: 'image/jpeg', quality: 0.86})
+      .then((preview) => {
+        setEditPhoto(preview);
+      })
+      .catch(() => {
+        setPhotoError('Unable to load this image.');
+      });
   };
 
   const handleCancelEdit = () => {
