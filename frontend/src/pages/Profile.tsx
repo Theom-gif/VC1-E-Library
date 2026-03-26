@@ -4,7 +4,8 @@ import {motion} from 'motion/react';
 import {useLibrary} from '../context/LibraryContext';
 import CoverImage from '../components/CoverImage';
 import profileService, {type ReadingActivityBucket, type ReadingActivityRange} from '../service/profileService';
-import {resizeImageFileToDataUrl} from '../utils/image';
+import ProfileForm from '../components/profile/ProfileForm';
+import {useI18n} from '../i18n/I18nProvider';
 
 interface ProfileProps {
   user: {name: string; photo: string; membership: string; memberSince?: string};
@@ -76,14 +77,9 @@ function splitFullName(value: string): {firstname: string; lastname: string} {
 }
 
 export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) {
+  const {t} = useI18n();
   const {books} = useLibrary();
   const [isEditing, setIsEditing] = React.useState(false);
-  const [editName, setEditName] = React.useState(user.name);
-  const [editPhoto, setEditPhoto] = React.useState(user.photo);
-  const [selectedPhotoFile, setSelectedPhotoFile] = React.useState<File | null>(null);
-  const [photoError, setPhotoError] = React.useState('');
-  const [saveError, setSaveError] = React.useState('');
-  const [isSavingProfile, setIsSavingProfile] = React.useState(false);
   const [readingActivityRange, setReadingActivityRange] = React.useState<ReadingActivityRange>('7d');
   const [readingActivity, setReadingActivity] = React.useState<ReadingActivityBucket[]>(READING_ACTIVITY_FALLBACK['7d']);
   const [readingActivityTotal, setReadingActivityTotal] = React.useState(
@@ -98,13 +94,6 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
     booksReadCount: 0,
     readingDaysCount: 0,
   });
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  React.useEffect(() => {
-    setEditName(user.name);
-    setEditPhoto(user.photo);
-    setSelectedPhotoFile(null);
-  }, [user.name, user.photo]);
 
   React.useEffect(() => {
     let alive = true;
@@ -205,109 +194,6 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
   const booksReadValue = String(readingActivity.filter((item) => item.minutes > 0).length);
   const readingStreakValue = `${readingActivity.reduce((count, item) => (item.minutes > 0 ? count + 1 : count), 0)} Days`;
 
-  const handleSave = async () => {
-    const trimmedName = editName.trim();
-    if (!trimmedName) {
-      setSaveError('Name is required.');
-      return;
-    }
-
-    const {firstname, lastname} = splitFullName(trimmedName);
-    const avatarForBackend = String(editPhoto || '').trim();
-
-    setIsSavingProfile(true);
-    setSaveError('');
-    setPhotoError('');
-    try {
-      const saved = await profileService.updateProfile({
-        firstname,
-        lastname,
-        ...(selectedPhotoFile ? {avatarFile: selectedPhotoFile} : {avatar: avatarForBackend || undefined}),
-      });
-      let persisted = saved;
-      try {
-        persisted = await profileService.me();
-      } catch {
-        // Keep the successful update response if the follow-up read is unavailable.
-      }
-
-      const nextUser = {
-        ...user,
-        name: persisted.name || saved.name || trimmedName,
-        photo: persisted.photo || saved.photo || avatarForBackend || editPhoto || user.photo,
-        membership: persisted.membership || saved.membership || user.membership,
-        memberSince: persisted.memberSince || saved.memberSince || user.memberSince,
-      };
-
-      onUpdateUser(nextUser);
-      setEditName(nextUser.name);
-      setEditPhoto(nextUser.photo);
-      setSelectedPhotoFile(null);
-      if (persisted.stats) {
-        setProfileStats({
-          booksReadCount: persisted.stats.booksReadCount,
-          readingDaysCount: persisted.stats.readingDaysCount,
-        });
-      }
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setIsEditing(false);
-    } catch (error: any) {
-      const fallbackUser = {
-        ...user,
-        name: trimmedName,
-        photo: editPhoto || user.photo,
-      };
-      onUpdateUser(fallbackUser);
-      setEditName(fallbackUser.name);
-      setEditPhoto(fallbackUser.photo);
-      setSelectedPhotoFile(null);
-      setSaveError('');
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setIsEditing(false);
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
-
-  const handlePhotoPick = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setPhotoError('Please choose an image file.');
-      setSelectedPhotoFile(null);
-      event.target.value = '';
-      return;
-    }
-
-    setSelectedPhotoFile(file);
-    setSaveError('');
-    setPhotoError('');
-
-    void resizeImageFileToDataUrl(file, {maxWidth: 512, maxHeight: 512, mimeType: 'image/jpeg', quality: 0.86})
-      .then((preview) => {
-        setEditPhoto(preview);
-      })
-      .catch(() => {
-        setPhotoError('Unable to load this image.');
-      });
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditName(user.name);
-    setEditPhoto(user.photo);
-    setSelectedPhotoFile(null);
-    setPhotoError('');
-    setSaveError('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-12">
       <section className="relative rounded-3xl overflow-hidden bg-surface border border-border p-8 md:p-12">
@@ -316,7 +202,7 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
           <div className="relative group">
             <div
               className="size-32 rounded-3xl bg-primary/20 bg-cover bg-center border-4 border-bg shadow-2xl overflow-hidden"
-              style={{backgroundImage: `url('${isEditing ? editPhoto : user.photo}')`}}
+              style={{backgroundImage: `url('${user.photo}')`}}
             >
               {isEditing && (
                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
@@ -330,40 +216,18 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
           </div>
           <div className="flex-1 text-center md:text-left space-y-2">
             {isEditing ? (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Full Name</label>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full md:w-64 bg-surface border border-border rounded-xl px-4 py-2 text-text focus:ring-primary focus:border-primary outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Profile Photo</label>
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoPick}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="rounded-xl border border-border bg-surface px-4 py-2 text-sm font-bold text-text hover:bg-white/10 transition-all"
-                    >
-                      Choose From Files
-                    </button>
-                    <p className="text-xs text-text-muted">
-                      {selectedPhotoFile ? `${selectedPhotoFile.name} selected` : 'Select a photo from your device.'}
-                    </p>
-                  </div>
-                  {photoError ? <p className="text-xs text-red-400">{photoError}</p> : null}
-                  {saveError ? <p className="text-xs text-red-400">{saveError}</p> : null}
-                </div>
+              <div className="w-full">
+                <ProfileForm
+                  initialName={user.name}
+                  initialPhoto={user.photo}
+                  onClose={() => setIsEditing(false)}
+                  onUpdatedUser={(partial) =>
+                    onUpdateUser({
+                      ...user,
+                      ...partial,
+                    })
+                  }
+                />
               </div>
             ) : (
               <>

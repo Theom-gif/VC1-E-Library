@@ -5,6 +5,7 @@ import type {BookType} from '../types';
 
 export type ReadingActivityRange = '7d' | '30d' | '1y';
 export type ProfileSummary = {
+  id?: string;
   firstname?: string;
   lastname?: string;
   name: string;
@@ -144,9 +145,11 @@ function normalizeProfileSummary(payload: any): ProfileSummary {
   const dataSource = pickObject(payload?.data || payload);
   const source = pickObject(dataSource?.user || payload?.user || payload?.profile || dataSource);
   const statsSource = pickObject(dataSource?.stats);
+  const id = pickString(source?.id, source?.user_id, source?.uuid);
   const firstname = pickString(source?.firstname, source?.first_name);
   const lastname = pickString(source?.lastname, source?.last_name);
   return {
+    id: id || undefined,
     firstname: firstname || undefined,
     lastname: lastname || undefined,
     name: pickString(source?.full_name, source?.name, `${firstname} ${lastname}`.trim(), source?.username, 'Library User'),
@@ -184,51 +187,63 @@ async function getWithAliasFallback<T>(paths: string[], fn: (path: string) => Pr
 }
 
 function buildProfileJsonPayload(payload: {
+  name?: string;
   firstname?: string;
   lastname?: string;
   bio?: string;
   facebook_url?: string;
   avatar?: string | null;
+  photo?: string | null;
 }) {
   const body: Record<string, string> = {};
+  const name = pickString(payload?.name);
   const firstname = pickString(payload?.firstname);
   const lastname = pickString(payload?.lastname);
   const bio = String(payload?.bio || '').trim();
   const facebookUrl = String(payload?.facebook_url || '').trim();
   const avatar = String(payload?.avatar || '').trim();
+  const photo = String(payload?.photo || '').trim();
 
+  if (name) body.name = name;
   if (firstname) body.firstname = firstname;
   if (lastname) body.lastname = lastname;
   if (bio) body.bio = bio;
   if (facebookUrl) body.facebook_url = facebookUrl;
   if (avatar) body.avatar = avatar;
+  if (photo) body.photo = photo;
 
   return body;
 }
 
 function buildProfileFormData(payload: {
+  name?: string;
   firstname?: string;
   lastname?: string;
   bio?: string;
   facebook_url?: string;
   avatar?: string | null;
+  photo?: string | null;
   avatarFile?: File | null;
   methodOverride?: 'PATCH' | 'PUT';
 }) {
   const form = new FormData();
+  const name = pickString(payload?.name);
   const firstname = pickString(payload?.firstname);
   const lastname = pickString(payload?.lastname);
   const bio = String(payload?.bio || '').trim();
   const facebookUrl = String(payload?.facebook_url || '').trim();
   const avatar = String(payload?.avatar || '').trim();
+  const photo = String(payload?.photo || '').trim();
   const methodOverride = payload?.methodOverride;
 
   if (methodOverride) form.append('_method', methodOverride);
+  if (name) form.append('name', name);
   if (firstname) form.append('firstname', firstname);
   if (lastname) form.append('lastname', lastname);
   if (bio) form.append('bio', bio);
   if (facebookUrl) form.append('facebook_url', facebookUrl);
   if (avatar) form.append('avatar', avatar);
+  if (photo) form.append('photo', photo);
 
   if (payload?.avatarFile instanceof File) {
     // Common backend conventions: accept either `avatar` or `photo` for a profile image file.
@@ -240,11 +255,13 @@ function buildProfileFormData(payload: {
 }
 
 async function updateProfileWithFallback(payload: {
+  name?: string;
   firstname?: string;
   lastname?: string;
   bio?: string;
   facebook_url?: string;
   avatar?: string | null;
+  photo?: string | null;
   avatarFile?: File | null;
 }) {
   const paths = ['/api/me/profile', '/api/me'];
@@ -337,15 +354,49 @@ export const profileService = {
   },
 
   updateProfile: async (payload: {
+    name?: string;
     firstname?: string;
     lastname?: string;
     bio?: string;
     facebook_url?: string;
     avatar?: string | null;
+    photo?: string | null;
     avatarFile?: File | null;
   }): Promise<ProfileSummary> => {
     const response = await updateProfileWithFallback(payload);
     return normalizeProfileSummary(response);
+  },
+
+  uploadAvatar: async (file: File): Promise<ProfileSummary> => {
+    if (!(file instanceof File)) {
+      throw new Error('Avatar file is required.');
+    }
+
+    const form = new FormData();
+    form.append('avatar', file, file.name);
+    form.append('photo', file, file.name);
+
+    try {
+      const payload = await getWithAliasFallback(
+        [
+          '/api/me/avatar',
+          '/api/me/profile/avatar',
+          '/api/profile/avatar',
+        ],
+        (path) =>
+          apiClient.post(path, form, {
+            headers: {Accept: 'application/json'},
+          }),
+      );
+      return normalizeProfileSummary(payload);
+    } catch (error: any) {
+      const status = Number(error?.status);
+      if (status && status !== 404 && status !== 405 && status !== 415) throw error;
+
+      // Fallback: some backends only accept avatar uploads as part of the profile update payload.
+      const response = await updateProfileWithFallback({avatarFile: file});
+      return normalizeProfileSummary(response);
+    }
   },
 
   updateSettings: (payload: Record<string, unknown>) => apiClient.patch('/api/me/settings', payload),
