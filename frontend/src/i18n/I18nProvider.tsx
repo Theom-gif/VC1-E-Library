@@ -26,6 +26,8 @@ const EN_MESSAGES: I18nMessages = {
 
   'profile.edit': 'Edit Profile',
   'profile.saveChanges': 'Save Changes',
+  'profile.logout': 'Log Out',
+  'profile.share': 'Share profile',
   'profile.fullName': 'Full name',
   'profile.firstName': 'First name',
   'profile.lastName': 'Last name',
@@ -44,6 +46,21 @@ const EN_MESSAGES: I18nMessages = {
   'profile.nameTooLong': 'Name must be {max} characters or fewer.',
   'profile.bioTooLong': 'Bio must be {max} characters or fewer.',
   'profile.invalidUrl': 'Please enter a valid URL.',
+  'profile.range7d': 'Last 7 Days',
+  'profile.range30d': 'Last 30 Days',
+  'profile.range1y': 'This Year',
+  'profile.readingActivity': 'Reading Activity',
+  'profile.currentlyReading': 'Currently Reading',
+  'profile.achievements': 'Achievements',
+  'profile.friends': 'Friends',
+  'profile.seeAll': 'See All',
+  'profile.booksRead': 'Books Read',
+  'profile.readingStreak': 'Reading Streak',
+  'profile.followers': 'Followers',
+  'profile.tagline': 'Passionate reader',
+  'profile.taglineMemberSince': 'Passionate reader \u2022 Member since {date}',
+  'profile.loadingBackendActivity': 'Loading backend activity...',
+  'profile.loadingBackendBooks': 'Loading backend books...',
 };
 
 export function I18nProvider({
@@ -76,4 +93,3 @@ export function useI18n() {
   }
   return ctx;
 }
-

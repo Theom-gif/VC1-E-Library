@@ -67,12 +67,22 @@ function pickNumber(...values: unknown[]): number {
 }
 
 function asAbsoluteAssetUrl(value: string): string {
-  const raw = String(value || '').trim();
+  const raw = String(value || '').trim().replace(/\\/g, '/');
   if (!raw) return '';
   if (/^(https?:|data:)/i.test(raw)) return raw;
 
   const base = String(API_BASE_URL || '').trim().replace(/\/+$/, '');
-  const normalized = raw.replace(/^\/+/, '');
+
+  // Laravel-ish paths we commonly see:
+  // - public/storage/avatars/x.jpg
+  // - /public/storage/avatars/x.jpg
+  // - storage/app/public/avatars/x.jpg
+  // - /storage/app/public/avatars/x.jpg
+  // - avatars/x.jpg (meaning storage/avatars/x.jpg)
+  const withoutPublicPrefix = raw.replace(/^\/?public\//, '');
+  const withoutAppPublic = withoutPublicPrefix.replace(/^\/?storage\/app\/public\//, 'storage/');
+  const withoutPublicStorage = withoutAppPublic.replace(/^\/?public\/storage\//, 'storage/');
+  const normalized = withoutPublicStorage.replace(/^\/+/, '');
 
   if (!base) return raw.startsWith('/') ? raw : `/${normalized}`;
   if (raw.startsWith('/')) return `${base}/${normalized}`;
@@ -154,7 +164,27 @@ function normalizeProfileSummary(payload: any): ProfileSummary {
     lastname: lastname || undefined,
     name: pickString(source?.full_name, source?.name, `${firstname} ${lastname}`.trim(), source?.username, 'Library User'),
     photo: asAbsoluteAssetUrl(
-      pickString(source?.photo, source?.photo_url, source?.avatar, source?.avatar_url, source?.image, source?.image_url),
+      pickString(
+        source?.photo,
+        source?.photo_url,
+        source?.photo_path,
+        source?.profile_photo,
+        source?.profile_photo_url,
+        source?.profile_photo_path,
+        source?.profilePhoto,
+        source?.profilePhotoUrl,
+        source?.avatar,
+        source?.avatar_url,
+        source?.avatar_path,
+        source?.avatarPath,
+        source?.image,
+        source?.image_url,
+        source?.image_path,
+        source?.imagePath,
+        // Some avatar upload endpoints only return `{ path }` or `{ url }`.
+        source?.url,
+        source?.path,
+      ),
     ),
     bio: pickString(source?.bio) || undefined,
     facebookUrl: pickString(source?.facebook_url, source?.facebookUrl) || undefined,
@@ -340,17 +370,21 @@ async function updateProfileWithFallback(payload: {
   throw lastError || new Error('Profile update endpoint not found.');
 }
 
+async function meImpl(): Promise<ProfileSummary> {
+  const payload = await getWithAliasFallback(
+    [
+      '/api/me/profile',
+      '/api/me',
+      '/api/profile',
+    ],
+    (path) => apiClient.get(path),
+  );
+  return normalizeProfileSummary(payload);
+}
+
 export const profileService = {
   me: async (): Promise<ProfileSummary> => {
-    const payload = await getWithAliasFallback(
-      [
-        '/api/me/profile',
-        '/api/me',
-        '/api/profile',
-      ],
-      (path) => apiClient.get(path),
-    );
-    return normalizeProfileSummary(payload);
+    return meImpl();
   },
 
   updateProfile: async (payload: {
@@ -388,14 +422,26 @@ export const profileService = {
             headers: {Accept: 'application/json'},
           }),
       );
-      return normalizeProfileSummary(payload);
+      const saved = normalizeProfileSummary(payload);
+      if (saved.photo) return saved;
+      try {
+        return await meImpl();
+      } catch {
+        return saved;
+      }
     } catch (error: any) {
       const status = Number(error?.status);
       if (status && status !== 404 && status !== 405 && status !== 415) throw error;
 
       // Fallback: some backends only accept avatar uploads as part of the profile update payload.
       const response = await updateProfileWithFallback({avatarFile: file});
-      return normalizeProfileSummary(response);
+      const saved = normalizeProfileSummary(response);
+      if (saved.photo) return saved;
+      try {
+        return await meImpl();
+      } catch {
+        return saved;
+      }
     }
   },
 

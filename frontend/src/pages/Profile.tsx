@@ -3,6 +3,7 @@ import {Icons} from '../types';
 import {motion} from 'motion/react';
 import {useLibrary} from '../context/LibraryContext';
 import CoverImage from '../components/CoverImage';
+import AvatarImage from '../components/AvatarImage';
 import profileService, {type ReadingActivityBucket, type ReadingActivityRange} from '../service/profileService';
 import ProfileForm from '../components/profile/ProfileForm';
 import {useI18n} from '../i18n/I18nProvider';
@@ -21,10 +22,10 @@ function formatMemberSince(value?: string): string {
   return parsed.toLocaleDateString(undefined, {year: 'numeric', month: 'long', day: 'numeric'});
 }
 
-const READING_ACTIVITY_RANGE_OPTIONS: Array<{value: ReadingActivityRange; label: string}> = [
-  {value: '7d', label: 'Last 7 Days'},
-  {value: '30d', label: 'Last 30 Days'},
-  {value: '1y', label: 'This Year'},
+const READING_ACTIVITY_RANGE_OPTIONS: Array<{value: ReadingActivityRange; labelKey: string}> = [
+  {value: '7d', labelKey: 'profile.range7d'},
+  {value: '30d', labelKey: 'profile.range30d'},
+  {value: '1y', labelKey: 'profile.range1y'},
 ];
 
 const READING_ACTIVITY_FALLBACK: Record<ReadingActivityRange, ReadingActivityBucket[]> = {
@@ -59,21 +60,6 @@ function getLocalTimezone(): string {
   } catch {
     return 'Asia/Phnom_Penh';
   }
-}
-
-function splitFullName(value: string): {firstname: string; lastname: string} {
-  const parts = String(value || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (!parts.length) return {firstname: '', lastname: ''};
-  if (parts.length === 1) return {firstname: parts[0], lastname: ''};
-
-  return {
-    firstname: parts[0],
-    lastname: parts.slice(1).join(' '),
-  };
 }
 
 export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) {
@@ -192,25 +178,21 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
   const memberSinceText = formatMemberSince(user.memberSince);
   const maxReadingMinutes = Math.max(...readingActivity.map((item) => item.minutes), 1);
   const booksReadValue = String(readingActivity.filter((item) => item.minutes > 0).length);
-  const readingStreakValue = `${readingActivity.reduce((count, item) => (item.minutes > 0 ? count + 1 : count), 0)} Days`;
 
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-12">
       <section className="relative rounded-3xl overflow-hidden bg-surface border border-border p-8 md:p-12">
         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-r from-primary/30 via-bg to-primary/30 opacity-50" />
         <div className="relative z-10 flex flex-col md:flex-row items-center md:items-end gap-8">
-          <div className="relative group">
-            <div
-              className="size-32 rounded-3xl bg-primary/20 bg-cover bg-center border-4 border-bg shadow-2xl overflow-hidden"
-              style={{backgroundImage: `url('${user.photo}')`}}
-            >
-              {isEditing && (
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                  <Icons.Edit3 className="size-8 text-white" />
-                </div>
-              )}
+          <div className="relative">
+            <div className="size-32 rounded-3xl border-4 border-bg shadow-2xl overflow-hidden bg-surface">
+              <AvatarImage
+                src={user.photo}
+                alt={t('profile.avatarAlt', {name: user.name || 'User'})}
+                className="h-full w-full object-cover"
+              />
             </div>
-            <div className="absolute -bottom-2 -right-2 p-2 rounded-xl bg-primary text-white shadow-lg">
+            <div className="absolute -bottom-2 -right-2 p-2 rounded-xl bg-primary text-white shadow-lg" aria-hidden="true">
               <Icons.Award className="size-5" />
             </div>
           </div>
@@ -234,58 +216,44 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
                 <h1 className="text-3xl font-bold text-text">{user.name}</h1>
                 <p className="text-text-muted">
                   {memberSinceText
-                    ? `Passionate reader & Sci-Fi enthusiast • Member since ${memberSinceText}`
-                    : 'Passionate reader & Sci-Fi enthusiast'}
+                    ? t('profile.taglineMemberSince', {date: memberSinceText})
+                    : t('profile.tagline')}
                 </p>
               </>
             )}
             <div className="flex flex-wrap justify-center md:justify-start gap-4 pt-2">
               <StatBadge
-                label="Books Read"
+                label={t('profile.booksRead')}
                 value={String(profileStats.booksReadCount || Number(booksReadValue))}
                 icon={<Icons.Book className="size-3" />}
               />
               <StatBadge
-                label="Reading Streak"
+                label={t('profile.readingStreak')}
                 value={`${profileStats.readingDaysCount || readingActivity.reduce((count, item) => (item.minutes > 0 ? count + 1 : count), 0)} Days`}
                 icon={<Icons.Flame className="size-3" />}
               />
-              <StatBadge label="Followers" value="842" icon={<Icons.User className="size-3" />} />
+              <StatBadge label={t('profile.followers')} value="842" icon={<Icons.User className="size-3" />} />
             </div>
           </div>
           <div className="flex gap-3">
-            {isEditing ? (
-              <>
-                <button
-                  onClick={handleCancelEdit}
-                  disabled={isSavingProfile}
-                  className="px-6 py-2 rounded-xl font-bold text-text-muted hover:text-text transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => void handleSave()}
-                  disabled={isSavingProfile}
-                  className="bg-primary text-white px-8 py-2 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-60"
-                >
-                  {isSavingProfile ? 'Saving...' : 'Save Changes'}
-                </button>
-              </>
-            ) : (
+            {isEditing ? null : (
               <>
                 <button
                   onClick={() => setIsEditing(true)}
                   className="bg-primary text-white px-6 py-2 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
                 >
-                  Edit Profile
+                  {t('profile.edit')}
                 </button>
                 <button
                   onClick={() => onNavigate('logout')}
                   className="bg-surface text-red-500 border border-red-500/30 px-6 py-2 rounded-xl font-bold hover:bg-red-500/10 transition-all"
                 >
-                  Log Out
+                  {t('profile.logout')}
                 </button>
-                <button className="bg-surface text-text border border-border p-2 rounded-xl hover:bg-white/10 transition-all">
+                <button
+                  className="bg-surface text-text border border-border p-2 rounded-xl hover:bg-white/10 transition-all"
+                  aria-label={t('profile.share')}
+                >
                   <Icons.Share2 className="size-5" />
                 </button>
               </>
@@ -298,7 +266,7 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
         <div className="lg:col-span-2 space-y-12">
           <section className="space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-text">Reading Activity</h3>
+              <h3 className="text-xl font-bold text-text">{t('profile.readingActivity')}</h3>
               <select
                 value={readingActivityRange}
                 onChange={(event) => setReadingActivityRange(event.target.value as ReadingActivityRange)}
@@ -306,7 +274,7 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
               >
                 {READING_ACTIVITY_RANGE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value} className="bg-bg">
-                    {option.label}
+                    {t(option.labelKey)}
                   </option>
                 ))}
               </select>
@@ -315,7 +283,7 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
               <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-bold text-primary">
                 {readingActivityTotal} mins total
               </span>
-              {readingActivityLoading ? <span className="text-text-muted">Loading backend activity...</span> : null}
+              {readingActivityLoading ? <span className="text-text-muted">{t('profile.loadingBackendActivity')}</span> : null}
               {readingActivityError ? <span className="text-amber-500">{readingActivityError}</span> : null}
             </div>
             <div className="h-64 w-full bg-surface border border-border rounded-2xl p-6 flex items-end justify-between gap-3">
@@ -346,9 +314,9 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
 
           <section className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-xl font-bold text-text">Currently Reading</h3>
+              <h3 className="text-xl font-bold text-text">{t('profile.currentlyReading')}</h3>
               <div className="text-xs">
-                {currentlyReadingLoading ? <span className="text-text-muted">Loading backend books...</span> : null}
+                {currentlyReadingLoading ? <span className="text-text-muted">{t('profile.loadingBackendBooks')}</span> : null}
                 {currentlyReadingError ? <span className="text-amber-500">{currentlyReadingError}</span> : null}
               </div>
             </div>
@@ -386,7 +354,7 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
 
         <div className="space-y-12">
           <section className="space-y-6">
-            <h3 className="text-xl font-bold text-text">Achievements</h3>
+            <h3 className="text-xl font-bold text-text">{t('profile.achievements')}</h3>
             <div className="grid grid-cols-3 gap-4">
               <Achievement icon={<Icons.Flame className="text-orange-500" />} label="Streak" />
               <Achievement icon={<Icons.Award className="text-yellow-500" />} label="Elite" />
@@ -401,8 +369,8 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
 
           <section className="space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-text">Friends</h3>
-              <button className="text-xs font-bold text-primary hover:underline">See All</button>
+              <h3 className="text-xl font-bold text-text">{t('profile.friends')}</h3>
+              <button className="text-xs font-bold text-primary hover:underline">{t('profile.seeAll')}</button>
             </div>
             <div className="space-y-4">
               {[1, 2, 3, 4].map((f) => (

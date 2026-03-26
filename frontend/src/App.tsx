@@ -2,6 +2,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Icons, BookType, hydrateBooksFromApi } from './types';
 import {useLibrary} from './context/LibraryContext';
+import {useUnsavedChanges} from './context/UnsavedChangesContext';
+import defaultAvatarUrl from './utils/defaultAvatar';
 
 // Page Components
 import Home from './pages/Home';
@@ -60,8 +62,7 @@ type AppProps = {
 };
 
 const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
-const DEFAULT_PROFILE_PHOTO =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI';
+const DEFAULT_PROFILE_PHOTO = defaultAvatarUrl;
 
 function readProfileCache(): Partial<{name: string; photo: string; memberSince: string}> {
   try {
@@ -114,6 +115,41 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     membership: authUser?.id === 'guest' ? 'Normal User' : membershipTier === 'reader' ? 'Reader Member' : 'Normal User',
     memberSince: authUser?.id === 'guest' ? '' : cachedProfile.memberSince || authUser?.memberSince || '',
   });
+
+  const {isDirty, confirmIfDirty, setDirty} = useUnsavedChanges();
+  const canNavigateAway = React.useCallback(() => {
+    if (!isDirty) return true;
+    const ok = confirmIfDirty();
+    if (ok) setDirty(false);
+    return ok;
+  }, [confirmIfDirty, isDirty, setDirty]);
+
+  const urlSyncRef = useRef({skipPush: false});
+
+  const pageToPath = React.useCallback((page: Page) => {
+    if (page === 'home') return '/';
+    if (page === 'categories') return '/categories';
+    if (page === 'favorites') return '/favorites';
+    if (page === 'downloads') return '/downloads';
+    if (page === 'settings') return '/settings';
+    if (page === 'profile') return '/profile';
+    if (page === 'notifications') return '/notifications';
+    if (page === 'search') return '/search';
+    return '/';
+  }, []);
+
+  const pathToPage = React.useCallback((path: string): Page | null => {
+    const normalized = String(path || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!normalized || normalized === 'home') return 'home';
+    if (normalized === 'categories') return 'categories';
+    if (normalized === 'favorites') return 'favorites';
+    if (normalized === 'downloads') return 'downloads';
+    if (normalized === 'settings') return 'settings';
+    if (normalized === 'profile') return 'profile';
+    if (normalized === 'notifications') return 'notifications';
+    if (normalized === 'search') return 'search';
+    return null;
+  }, []);
 
   React.useEffect(() => {
     if (isLightMode) document.documentElement.classList.remove('dark');
@@ -261,6 +297,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   }, [isGuestUser, user.memberSince, user.name, user.photo]);
 
   const handleAuthRedirect = (mode: 'login' | 'register' = 'login') => {
+    if (currentPage !== 'home' && !canNavigateAway()) return;
     setShowAccessPrompt(false);
     setHomeAuthMode(mode);
     setShowHomeAuthOverlay(true);
@@ -289,13 +326,65 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       setPendingNav({page, data});
       setAccessPromptReason('feature');
       setShowAccessPrompt(true);
-      return;
+      return false;
     }
+    if (page !== currentPage && !canNavigateAway()) return false;
     if (page === 'book-details' && data) setSelectedBook(data);
     if (page === 'author-details' && data) setSelectedAuthor(data);
     setCurrentPage(page);
     window.scrollTo(0, 0);
+    return true;
   };
+
+  const didInitUrlRef = useRef(false);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (didInitUrlRef.current) return;
+    didInitUrlRef.current = true;
+
+    const next = pathToPage(window.location.pathname);
+    if (!next || next === currentPage) return;
+
+    urlSyncRef.current.skipPush = true;
+    const ok = navigateTo(next);
+    if (!ok) {
+      // Keep the URL consistent with the actual app state.
+      urlSyncRef.current.skipPush = true;
+      window.history.replaceState(null, '', pageToPath(currentPage));
+    }
+  }, [currentPage, navigateTo, pageToPath, pathToPage]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (urlSyncRef.current.skipPush) {
+      urlSyncRef.current.skipPush = false;
+      return;
+    }
+    const nextPath = pageToPath(currentPage);
+    if (nextPath && window.location.pathname !== nextPath) {
+      window.history.pushState(null, '', nextPath);
+    }
+  }, [currentPage, pageToPath]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onPopState = () => {
+      const next = pathToPage(window.location.pathname);
+      if (!next || next === currentPage) return;
+
+      urlSyncRef.current.skipPush = true;
+      const ok = navigateTo(next);
+      if (!ok) {
+        urlSyncRef.current.skipPush = true;
+        window.history.pushState(null, '', pageToPath(currentPage));
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [currentPage, navigateTo, pageToPath, pathToPage]);
 
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -348,6 +437,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const showSearchPopover = isSearchFocused && searchQuery.trim().length > 0;
   const quickResults = filteredBooks.slice(0, 6);
   const handleLogout = () => {
+    if (currentPage !== 'home' && !canNavigateAway()) return;
     onLogout();
     setHomeAuthMode('login');
     setShowHomeAuthOverlay(true);

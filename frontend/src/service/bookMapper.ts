@@ -18,12 +18,16 @@ function pickNumber(...values: unknown[]): number {
 }
 
 function asAbsoluteAssetUrl(value: string): string {
-  const raw = String(value || '').trim();
+  const raw = String(value || '').trim().replace(/\\/g, '/');
   if (!raw) return '';
   if (/^(https?:|data:)/i.test(raw)) return raw;
 
   const base = String(API_BASE_URL || '').replace(/\/+$/, '');
-  const normalized = raw.replace(/^\/+/, '');
+
+  const withoutPublicPrefix = raw.replace(/^\/?public\//, '');
+  const withoutAppPublic = withoutPublicPrefix.replace(/^\/?storage\/app\/public\//, 'storage/');
+  const withoutPublicStorage = withoutAppPublic.replace(/^\/?public\/storage\//, 'storage/');
+  const normalized = withoutPublicStorage.replace(/^\/+/, '');
 
   if (!base) return raw.startsWith('/') ? raw : `/${normalized}`;
   if (raw.startsWith('/')) return `${base}/${normalized}`;

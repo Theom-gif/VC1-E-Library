@@ -10,10 +10,15 @@ export type UpdateProfileInput = {
 
 export function useUserProfile() {
   const [profile, setProfile] = React.useState<ProfileSummary | null>(null);
+  const profileRef = React.useRef<ProfileSummary | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [uploadingAvatar, setUploadingAvatar] = React.useState(false);
   const [error, setError] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -32,6 +37,7 @@ export function useUserProfile() {
       setSaving(true);
       setError(null);
       const optimisticName = `${String(input.firstname || '').trim()} ${String(input.lastname || '').trim()}`.trim();
+      const previous = profileRef.current;
       setProfile((prev) =>
         prev
           ? {
@@ -55,6 +61,7 @@ export function useUserProfile() {
         setProfile(saved);
         return saved;
       } catch (err) {
+        setProfile(previous);
         setError(err);
         throw err;
       } finally {
@@ -91,4 +98,3 @@ export function useUserProfile() {
     setProfile,
   };
 }
-

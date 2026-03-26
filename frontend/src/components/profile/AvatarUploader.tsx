@@ -1,8 +1,18 @@
 import React from 'react';
 import {useI18n} from '../../i18n/I18nProvider';
 import {useToast} from '../ToastProvider';
+import AvatarImage from '../AvatarImage';
 import {resizeImageFileToDataUrl} from '../../utils/image';
 import {validateAvatarFile} from '../../utils/profileValidators';
+
+function firstString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const first = value.find((v) => typeof v === 'string');
+    return typeof first === 'string' ? first : '';
+  }
+  return '';
+}
 
 type Props = {
   nameForAlt: string;
@@ -17,11 +27,23 @@ export default function AvatarUploader({nameForAlt, value, disabled, onUploaded}
   const [isDragging, setIsDragging] = React.useState(false);
   const [error, setError] = React.useState('');
   const [preview, setPreview] = React.useState(value);
+  const objectUrlRef = React.useRef<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     setPreview(value);
   }, [value]);
+
+  React.useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        try {
+          URL.revokeObjectURL(objectUrlRef.current);
+        } catch {}
+        objectUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const handleFile = React.useCallback(
     async (file: File) => {
@@ -36,6 +58,17 @@ export default function AvatarUploader({nameForAlt, value, disabled, onUploaded}
       }
       setError('');
 
+      // Always show a preview immediately; object URLs are the most reliable.
+      try {
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+      } catch {}
+      try {
+        objectUrlRef.current = URL.createObjectURL(file);
+        setPreview(objectUrlRef.current);
+      } catch {
+        // Ignore; we'll try the dataUrl resize preview next.
+      }
+
       try {
         const dataUrl = await resizeImageFileToDataUrl(file, {maxWidth: 512, maxHeight: 512, mimeType: 'image/jpeg', quality: 0.86});
         setPreview(dataUrl);
@@ -47,8 +80,16 @@ export default function AvatarUploader({nameForAlt, value, disabled, onUploaded}
         await onUploaded(file);
         toast.push({kind: 'success', message: t('profile.avatarUpdated')});
       } catch (e: any) {
-        setError(e?.data?.message || e?.message || 'Upload failed.');
-        toast.push({kind: 'error', message: e?.data?.message || e?.message || 'Upload failed.'});
+        const backend = e?.data;
+        const backendErrors = backend?.errors;
+        const avatarError =
+          firstString(backendErrors?.avatar) ||
+          firstString(backendErrors?.photo) ||
+          firstString(backendErrors?.image) ||
+          '';
+        const message = avatarError || backend?.message || e?.message || 'Upload failed.';
+        setError(message);
+        toast.push({kind: 'error', message});
       }
     },
     [onUploaded, t, toast],
@@ -71,7 +112,7 @@ export default function AvatarUploader({nameForAlt, value, disabled, onUploaded}
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-4">
-        <img
+        <AvatarImage
           src={preview}
           alt={t('profile.avatarAlt', {name: nameForAlt || 'User'})}
           className="size-20 rounded-2xl object-cover border border-border bg-surface"
@@ -116,4 +157,3 @@ export default function AvatarUploader({nameForAlt, value, disabled, onUploaded}
     </div>
   );
 }
-

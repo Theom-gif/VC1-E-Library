@@ -28,6 +28,30 @@ function splitFullName(value: string): {firstname: string; lastname: string} {
   };
 }
 
+function firstString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const first = value.find((v) => typeof v === 'string');
+    return typeof first === 'string' ? first : '';
+  }
+  return '';
+}
+
+function mapBackendErrorsToFields(errors: any) {
+  const src = errors && typeof errors === 'object' ? errors : {};
+  const fields: Record<string, string> = {};
+
+  const fullNameMessage = firstString(src.name) || firstString(src.firstname) || firstString(src.lastname);
+  const bioMessage = firstString(src.bio);
+  const facebookMessage = firstString(src.facebook_url) || firstString(src.facebookUrl);
+
+  if (fullNameMessage) fields.fullName = fullNameMessage;
+  if (bioMessage) fields.bio = bioMessage;
+  if (facebookMessage) fields.facebookUrl = facebookMessage;
+
+  return fields;
+}
+
 export default function ProfileForm({initialName, initialPhoto, onClose, onUpdatedUser}: Props) {
   const {t} = useI18n();
   const toast = useToast();
@@ -98,6 +122,11 @@ export default function ProfileForm({initialName, initialPhoto, onClose, onUpdat
       });
       onClose();
     } catch (e: any) {
+      const backendErrors = e?.data?.errors;
+      const mapped = mapBackendErrorsToFields(backendErrors);
+      if (Object.keys(mapped).length) {
+        setFieldErrors((prev) => ({...prev, ...mapped}));
+      }
       toast.push({kind: 'error', message: e?.data?.message || e?.message || 'Save failed.'});
     }
   };
@@ -205,4 +234,3 @@ export default function ProfileForm({initialName, initialPhoto, onClose, onUpdat
     </div>
   );
 }
-

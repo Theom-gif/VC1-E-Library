@@ -84,6 +84,10 @@ async function parseResponse(response: Response): Promise<unknown> {
   return text || null;
 }
 
+function isObject(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object';
+}
+
 function readToken(): string | null {
   try {
     return localStorage.getItem('token');
@@ -179,6 +183,17 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
     }
 
     const data = await parseResponse(response);
+
+    // Some backends (including common Laravel conventions) return HTTP 200 with `{ success: false, ... }`.
+    // Treat it as an error so callers can map validation messages consistently.
+    if (response.ok && isObject(data) && (data as any).success === false) {
+      const error = new ApiClientError((data as any)?.message || (data as any)?.error || 'Request failed');
+      error.status = response.status;
+      error.data = data;
+      error.method = method;
+      error.url = url;
+      throw error;
+    }
 
     if (!response.ok) {
       const error = new ApiClientError(
