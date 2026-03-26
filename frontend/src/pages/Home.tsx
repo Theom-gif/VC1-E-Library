@@ -17,6 +17,7 @@ interface HomeProps {
     role: 'user' | 'author' | 'admin';
   }) => Promise<void>;
   showAuthOverlay?: boolean;
+  initialAuthMode?: 'login' | 'register';
   authOverlayReason?: 'read-limit' | 'feature';
   onCloseAuthOverlay?: () => void;
   onAuthSuccess?: () => void;
@@ -27,6 +28,7 @@ export default function Home({
   onLogin,
   onRegister,
   showAuthOverlay,
+  initialAuthMode,
   authOverlayReason,
   onCloseAuthOverlay,
   onAuthSuccess,
@@ -49,10 +51,10 @@ export default function Home({
 
   React.useEffect(() => {
     if (canShowAuthOverlay) {
-      setAuthMode('login');
+      setAuthMode(initialAuthMode === 'register' ? 'register' : 'login');
       setAuthError('');
     }
-  }, [canShowAuthOverlay]);
+  }, [canShowAuthOverlay, initialAuthMode]);
 
   const getAuthError = (err: any) => {
     if (!err) return 'Unable to login. Please check your credentials.';

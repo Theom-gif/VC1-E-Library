@@ -327,6 +327,14 @@ export default function AuthGate({children}: AuthGateProps) {
     authService.clearToken();
     clearSession();
     setMembershipTier('normal');
+    if (ALLOW_GUEST) {
+      setAuthRequired(false);
+      setForceLogin(false);
+      const guest = createGuestSession();
+      saveSession(guest);
+      setSessionUser(guest);
+      return;
+    }
     setAuthRequired(true);
     setForceLogin(true);
     setSessionUser(null);

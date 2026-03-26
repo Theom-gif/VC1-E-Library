@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
+    "build:deploy": "npm --prefix frontend run build && node scripts/prepare-deploy.mjs",
     "lint": "npm --prefix frontend run lint",
     "install:frontend": "npm --prefix frontend install"
   }

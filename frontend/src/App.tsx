@@ -97,6 +97,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const [pendingNav, setPendingNav] = useState<{page: Page; data?: any} | null>(null);
   const [accessPromptReason, setAccessPromptReason] = useState<'feature' | 'read-limit'>('feature');
   const [showHomeAuthOverlay, setShowHomeAuthOverlay] = useState(false);
+  const [homeAuthMode, setHomeAuthMode] = useState<'login' | 'register'>('login');
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -118,6 +119,28 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     if (isLightMode) document.documentElement.classList.remove('dark');
     else document.documentElement.classList.add('dark');
   }, [isLightMode]);
+
+  React.useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const shouldLockScroll = Boolean(showAccessPrompt || (showHomeAuthOverlay && authUser?.id === 'guest'));
+    if (!shouldLockScroll) return;
+
+    const body = document.body;
+    const html = document.documentElement;
+    const previousOverflow = body.style.overflow;
+    const previousPaddingRight = body.style.paddingRight;
+
+    const scrollbarWidth = window.innerWidth - html.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      body.style.overflow = previousOverflow;
+      body.style.paddingRight = previousPaddingRight;
+    };
+  }, [authUser?.id, showAccessPrompt, showHomeAuthOverlay]);
   React.useEffect(() => {
     let isMounted = true;
 
@@ -237,8 +260,9 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     });
   }, [isGuestUser, user.memberSince, user.name, user.photo]);
 
-  const handleAuthRedirect = () => {
+  const handleAuthRedirect = (mode: 'login' | 'register' = 'login') => {
     setShowAccessPrompt(false);
+    setHomeAuthMode(mode);
     setShowHomeAuthOverlay(true);
     setCurrentPage('home');
     window.scrollTo(0, 0);
@@ -325,7 +349,8 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const quickResults = filteredBooks.slice(0, 6);
   const handleLogout = () => {
     onLogout();
-    setShowHomeAuthOverlay(false);
+    setHomeAuthMode('login');
+    setShowHomeAuthOverlay(true);
     setCurrentPage('home');
     window.scrollTo(0, 0);
   };
@@ -339,6 +364,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
             onLogin={onLogin}
             onRegister={onRegister}
             showAuthOverlay={showHomeAuthOverlay && authUser?.id === 'guest'}
+            initialAuthMode={homeAuthMode}
             authOverlayReason={accessPromptReason}
             onCloseAuthOverlay={() => setShowHomeAuthOverlay(false)}
             onAuthSuccess={handleHomeAuthSuccess}
@@ -361,6 +387,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
             onLogin={onLogin}
             onRegister={onRegister}
             showAuthOverlay={showHomeAuthOverlay && authUser?.id === 'guest'}
+            initialAuthMode={homeAuthMode}
             authOverlayReason={accessPromptReason}
             onCloseAuthOverlay={() => setShowHomeAuthOverlay(false)}
             onAuthSuccess={handleHomeAuthSuccess}
@@ -511,24 +538,35 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 style={{ backgroundImage: `url('${user.photo}')` }}
                 onClick={() => {
                   if (isGuestUser) {
-                    handleAuthRedirect();
+                    handleAuthRedirect('login');
                     return;
                   }
                   navigateTo('profile');
                 }}
               />
-              <button
-                onClick={() => {
-                  if (isGuestUser) {
-                    handleAuthRedirect();
-                    return;
-                  }
-                  navigateTo('logout');
-                }}
-                className="hidden sm:block rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
-              >
-                {isGuestUser ? 'Login' : 'Logout'}
-              </button>
+              {isGuestUser ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleAuthRedirect('login')}
+                    className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => handleAuthRedirect('register')}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white hover:bg-primary/90 transition-colors"
+                  >
+                    Register
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => navigateTo('logout')}
+                  className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
+                >
+                  Logout
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -641,7 +679,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
               </button>
               <button
                 type="button"
-                onClick={handleAuthRedirect}
+                onClick={() => handleAuthRedirect('login')}
                 className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 transition-all"
               >
                 Register / Login as Reader
