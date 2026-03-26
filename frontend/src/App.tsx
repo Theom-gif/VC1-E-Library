@@ -4,6 +4,7 @@ import { Icons, BookType, hydrateBooksFromApi } from './types';
 import {useLibrary} from './context/LibraryContext';
 import {useUnsavedChanges} from './context/UnsavedChangesContext';
 import defaultAvatarUrl from './utils/defaultAvatar';
+import {useI18n} from './i18n/I18nProvider';
 
 // Page Components
 import Home from './pages/Home';
@@ -18,6 +19,7 @@ import NotificationsPage from './pages/Notifications';
 import Logout from './pages/Logout';
 import SearchPage from './pages/Search';
 import CoverImage from './components/CoverImage';
+import AvatarImage from './components/AvatarImage';
 import profileService from './service/profileService';
 import {
   AUTH_REQUIRED_EVENT,
@@ -92,6 +94,7 @@ function clearProfileCache() {
 }
 
 export default function App({ authUser, onLogout, onLogin, onRegister }: AppProps) {
+  const {t} = useI18n();
   const {books, newArrivals} = useLibrary();
   const [membershipTier, setMembershipTier] = useState<MembershipTier>(() => getMembershipTier());
   const [showAccessPrompt, setShowAccessPrompt] = useState(false);
@@ -213,6 +216,8 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   React.useEffect(() => {
     const handleAuthRequired = (event: Event) => {
+      // Only show the Reader upsell modal for guest sessions.
+      if (authUser?.id !== 'guest') return;
       const detail = (event as CustomEvent)?.detail || {};
       const reason = detail?.reason;
       const returnTo = detail?.returnTo;
@@ -387,6 +392,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   }, [currentPage, navigateTo, pageToPath, pathToPage]);
 
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     const onMouseDown = (event: MouseEvent) => {
@@ -397,6 +403,22 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [authUser?.id]);
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== '/') return;
+      const target = event.target as HTMLElement | null;
+      const tag = String(target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      event.preventDefault();
+      setIsSearchFocused(true);
+      searchInputRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const libraryBooks = useMemo(() => {
@@ -509,51 +531,83 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
             <div className="flex flex-1 justify-end items-center gap-6">
               <div
                 ref={searchContainerRef}
-                className="relative hidden md:flex items-center bg-surface border border-border rounded-lg px-4 py-2 w-64"
+                className="relative hidden md:flex w-[min(520px,44vw)]"
               >
-                <Icons.Search className="size-4 text-text-muted mr-2" />
-                <input 
-                  type="text" 
-                  placeholder="Search library..." 
-                  className="bg-transparent border-none focus:ring-0 text-sm text-text w-full placeholder:text-text-muted"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setIsSearchFocused(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setSearchQuery('');
-                      setIsSearchFocused(false);
-                      return;
-                    }
-                    if (e.key === 'Enter') {
-                      const q = searchQuery.trim();
-                      if (!q) return;
-                      navigateTo('search');
-                      setIsSearchFocused(false);
-                    }
-                  }}
-                  autoComplete="off"
-                />
-                {searchQuery.trim().length > 0 && (
-                  <button
-                    type="button"
-                    className="ml-2 text-text-muted hover:text-text transition-colors"
-                    onClick={() => {
-                      setSearchQuery('');
-                      setIsSearchFocused(true);
-                    }}
-                    title="Clear search"
-                  >
-                    <Icons.X className="size-4" />
-                  </button>
-                )}
+                <div
+                  className={`w-full rounded-2xl border bg-bg/70 px-4 py-2 backdrop-blur-xl transition-all shadow-sm ${
+                    isSearchFocused
+                      ? 'border-primary/45 ring-2 ring-primary/20'
+                      : 'border-border/60 hover:border-primary/25'
+                  }`}
+                >
+                  <label htmlFor="nav-search" className="sr-only">
+                    {t('nav.searchPlaceholder')}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center rounded-xl bg-surface/70 p-2 text-text-muted">
+                      <Icons.Search className="size-4" />
+                    </div>
+                    <input
+                      ref={searchInputRef}
+                      id="nav-search"
+                      type="text"
+                      placeholder={t('nav.searchPlaceholder')}
+                      className="w-full bg-transparent border-none outline-none focus:outline-none focus:ring-0 text-sm text-text placeholder:text-text-muted/80"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={() => setIsSearchFocused(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setSearchQuery('');
+                          setIsSearchFocused(false);
+                          return;
+                        }
+                        if (e.key === 'Enter') {
+                          const q = searchQuery.trim();
+                          if (!q) return;
+                          navigateTo('search');
+                          setIsSearchFocused(false);
+                        }
+                      }}
+                      autoComplete="off"
+                      aria-expanded={showSearchPopover}
+                      aria-controls="nav-search-popover"
+                    />
+
+                    <div className="flex items-center gap-1">
+                      {searchQuery.trim().length > 0 ? (
+                        <button
+                          type="button"
+                          className="rounded-xl p-2 text-text-muted hover:text-text hover:bg-surface/80 transition-colors"
+                          onClick={() => {
+                            setSearchQuery('');
+                            setIsSearchFocused(true);
+                            searchInputRef.current?.focus();
+                          }}
+                          title={t('nav.clearSearch')}
+                          aria-label={t('nav.clearSearch')}
+                        >
+                          <Icons.X className="size-4" />
+                        </button>
+                      ) : (
+                        <span className="hidden lg:inline-flex items-center gap-1 rounded-xl border border-border/60 bg-surface/60 px-2 py-1 text-[10px] font-bold text-text-muted/80">
+                          <span>/</span>
+                          <span className="font-semibold">Search</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
                 {showSearchPopover && (
-                  <div className="absolute top-full left-0 right-0 mt-2 rounded-xl bg-bg border border-border shadow-2xl overflow-hidden z-50">
+                  <div
+                    id="nav-search-popover"
+                    className="absolute top-full left-0 right-0 mt-2 rounded-2xl bg-bg/85 border border-border/70 shadow-2xl overflow-hidden z-50 backdrop-blur-xl"
+                  >
                     <div className="max-h-80 overflow-auto">
                       {quickResults.length === 0 ? (
                         <div className="px-4 py-3 text-sm text-text-muted">
-                          No results for <span className="text-text font-semibold">"{searchQuery.trim()}"</span>
+                          {t('search.noResultsFor', {query: searchQuery.trim()})}
                         </div>
                       ) : (
                         <div className="py-1">
@@ -561,7 +615,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                             <button
                               key={book.id}
                               type="button"
-                              className="w-full px-4 py-2 flex items-center gap-3 hover:bg-surface transition-colors text-left"
+                              className="group w-full px-4 py-2.5 flex items-center gap-3 hover:bg-surface/70 transition-colors text-left"
                               onClick={() => {
                                 navigateTo('book-details', book);
                                 setIsSearchFocused(false);
@@ -569,8 +623,8 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                             >
                               <CoverImage src={book.cover} alt={book.title} className="w-8 h-10 rounded object-cover border border-border" />
                               <div className="min-w-0 flex-1">
-                                <div className="text-sm font-semibold text-text line-clamp-1">{book.title}</div>
-                                <div className="text-[11px] text-text-muted line-clamp-1">{book.author} • {book.category}</div>
+                                <div className="text-sm font-semibold text-text line-clamp-1 group-hover:text-primary transition-colors">{book.title}</div>
+                                <div className="text-[11px] text-text-muted line-clamp-1">{book.author} \u2022 {book.category}</div>
                               </div>
                               <Icons.ArrowUpRight className="size-4 text-text-muted" />
                             </button>
@@ -584,7 +638,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                                 setIsSearchFocused(false);
                               }}
                             >
-                              View all results
+                              {t('search.viewAll')}
                             </button>
                           </div>
                         </div>
@@ -623,9 +677,10 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 <p className="text-xs font-bold text-text">{user.name}</p>
                 <p className="text-primary text-[10px] font-bold uppercase">{user.membership}</p>
               </div>
-              <div 
-                className="size-10 rounded-full bg-primary/20 bg-cover bg-center border-2 border-primary/20 cursor-pointer overflow-hidden"
-                style={{ backgroundImage: `url('${user.photo}')` }}
+              <button
+                type="button"
+                className="size-10 rounded-full bg-primary/20 border-2 border-primary/20 cursor-pointer overflow-hidden"
+                aria-label="Open profile"
                 onClick={() => {
                   if (isGuestUser) {
                     handleAuthRedirect('login');
@@ -633,7 +688,9 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                   }
                   navigateTo('profile');
                 }}
-              />
+              >
+                <AvatarImage src={user.photo} alt={`${user.name} avatar`} className="h-full w-full object-cover" />
+              </button>
               {isGuestUser ? (
                 <div className="flex items-center gap-2">
                   <button

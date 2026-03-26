@@ -3,8 +3,16 @@ import type {BookType} from '../types';
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
-    const normalized = String(value ?? '').trim();
-    if (normalized) return normalized;
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (normalized) return normalized;
+      continue;
+    }
+    if (typeof value === 'number' || typeof value === 'bigint') {
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+      continue;
+    }
   }
   return '';
 }

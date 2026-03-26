@@ -52,8 +52,16 @@ function pickObject(value: unknown): Record<string, any> {
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
-    const normalized = String(value ?? '').trim();
-    if (normalized) return normalized;
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (normalized) return normalized;
+      continue;
+    }
+    if (typeof value === 'number' || typeof value === 'bigint') {
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+      continue;
+    }
   }
   return '';
 }
@@ -165,22 +173,32 @@ function normalizeProfileSummary(payload: any): ProfileSummary {
     name: pickString(source?.full_name, source?.name, `${firstname} ${lastname}`.trim(), source?.username, 'Library User'),
     photo: asAbsoluteAssetUrl(
       pickString(
-        source?.photo,
         source?.photo_url,
         source?.photo_path,
-        source?.profile_photo,
+        source?.photo?.url,
+        source?.photo?.path,
+        source?.photo,
         source?.profile_photo_url,
         source?.profile_photo_path,
-        source?.profilePhoto,
+        source?.profile_photo?.url,
+        source?.profile_photo?.path,
+        source?.profile_photo,
         source?.profilePhotoUrl,
-        source?.avatar,
+        source?.profilePhoto?.url,
+        source?.profilePhoto?.path,
+        source?.profilePhoto,
         source?.avatar_url,
         source?.avatar_path,
+        source?.avatar?.url,
+        source?.avatar?.path,
         source?.avatarPath,
-        source?.image,
+        source?.avatar,
         source?.image_url,
         source?.image_path,
+        source?.image?.url,
+        source?.image?.path,
         source?.imagePath,
+        source?.image,
         // Some avatar upload endpoints only return `{ path }` or `{ url }`.
         source?.url,
         source?.path,

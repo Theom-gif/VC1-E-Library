@@ -61,6 +61,11 @@ const EN_MESSAGES: I18nMessages = {
   'profile.taglineMemberSince': 'Passionate reader \u2022 Member since {date}',
   'profile.loadingBackendActivity': 'Loading backend activity...',
   'profile.loadingBackendBooks': 'Loading backend books...',
+
+  'nav.searchPlaceholder': 'Search books, authors, categories...',
+  'nav.clearSearch': 'Clear search',
+  'search.noResultsFor': 'No results for "{query}"',
+  'search.viewAll': 'View all results',
 };
 
 export function I18nProvider({

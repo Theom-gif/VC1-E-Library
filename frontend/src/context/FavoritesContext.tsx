@@ -3,6 +3,7 @@ import type {BookType} from '../types';
 import favoriteService from '../service/favoriteService';
 import {toBookType} from '../service/bookMapper';
 import {requestAuth} from '../utils/readerUpgrade';
+import authService from '../service/authService';
 
 type FavoritesState = {
   favorites: BookType[];
@@ -54,8 +55,7 @@ function safeLocalStorageRemove(key: string) {
 
 function hasToken(): boolean {
   try {
-    if (typeof localStorage === 'undefined') return false;
-    return Boolean(localStorage.getItem('token'));
+    return Boolean(authService.getToken());
   } catch {
     return false;
   }

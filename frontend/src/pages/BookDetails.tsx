@@ -9,6 +9,7 @@ import reviewService from '../service/reviewService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
 import {PENDING_BOOK_RATING_KEY, requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
+import authService from '../service/authService';
 
 interface BookDetailsProps {
   book?: BookType | null;
@@ -37,7 +38,7 @@ function normalizeBackendBookId(value: unknown): string {
 
 function readToken(): string | null {
   try {
-    return localStorage.getItem('token');
+    return authService.getToken();
   } catch {
     return null;
   }

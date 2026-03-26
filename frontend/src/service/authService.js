@@ -1,7 +1,51 @@
 import apiClient from './apiClient';
 
+const TOKEN_KEYS = new Set([
+  'token',
+  'access_token',
+  'accessToken',
+  'auth_token',
+  'jwt',
+  'bearer_token',
+]);
+
+const pickString = (value) => {
+  const normalized = String(value ?? '').trim();
+  return normalized ? normalized : '';
+};
+
+const findTokenDeep = (value, depth = 0) => {
+  if (!value || depth > 6) return '';
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findTokenDeep(item, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value !== 'object') return '';
+
+  for (const [k, v] of Object.entries(value)) {
+    if (TOKEN_KEYS.has(k)) {
+      const found = pickString(v);
+      if (found) return found;
+    }
+  }
+
+  for (const v of Object.values(value)) {
+    const found = findTokenDeep(v, depth + 1);
+    if (found) return found;
+  }
+
+  return '';
+};
+
 const extractToken = (data) =>
-  data?.token || data?.access_token || data?.data?.token || data?.data?.access_token;
+  pickString(data?.token) ||
+  pickString(data?.access_token) ||
+  pickString(data?.data?.token) ||
+  pickString(data?.data?.access_token) ||
+  findTokenDeep(data);
 
 const storeToken = (token) => {
   if (token) {
@@ -75,7 +119,7 @@ export const authService = {
 
   me: () => apiClient.get('/api/me'),
 
-  getToken: () => localStorage.getItem('token'),
+  getToken: () => localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('accessToken'),
 
   setToken: (token) => storeToken(token),
 

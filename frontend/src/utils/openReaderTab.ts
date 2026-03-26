@@ -23,7 +23,13 @@ function escapeHtml(value: string): string {
 
 function readToken(): string | null {
   try {
-    return localStorage.getItem('token');
+    const token =
+      localStorage.getItem('token') ||
+      localStorage.getItem('access_token') ||
+      localStorage.getItem('accessToken') ||
+      localStorage.getItem('auth_token');
+    const normalized = String(token ?? '').trim();
+    return normalized || null;
   } catch {
     return null;
   }
