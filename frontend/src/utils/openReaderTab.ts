@@ -10,7 +10,7 @@ type OpenReaderTabArgs = {
 };
 
 // Use explicit Unicode escapes to avoid mojibake on systems that read files as non-UTF8.
-const APP_TAB_TITLE = '\u1782\u1798\u17d2\u1796\u17b5_Elibrary';
+const APP_TAB_TITLE = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
 
 function escapeHtml(value: string): string {
   return String(value)

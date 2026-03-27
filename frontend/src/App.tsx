@@ -18,6 +18,7 @@ import AuthorDetails from './pages/AuthorDetails';
 import NotificationsPage from './pages/Notifications';
 import Logout from './pages/Logout';
 import SearchPage from './pages/Search';
+import Plans from './pages/Plans';
 import CoverImage from './components/CoverImage';
 import AvatarImage from './components/AvatarImage';
 import profileService from './service/profileService';
@@ -30,6 +31,7 @@ import {
 
 type Page =
   | 'home'
+  | 'plans'
   | 'categories'
   | 'favorites'
   | 'downloads'
@@ -131,6 +133,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   const pageToPath = React.useCallback((page: Page) => {
     if (page === 'home') return '/';
+    if (page === 'plans') return '/plans';
     if (page === 'categories') return '/categories';
     if (page === 'favorites') return '/favorites';
     if (page === 'downloads') return '/downloads';
@@ -144,6 +147,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const pathToPage = React.useCallback((path: string): Page | null => {
     const normalized = String(path || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
     if (!normalized || normalized === 'home') return 'home';
+    if (normalized === 'plans') return 'plans';
     if (normalized === 'categories') return 'categories';
     if (normalized === 'favorites') return 'favorites';
     if (normalized === 'downloads') return 'downloads';
@@ -336,6 +340,17 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     if (page !== currentPage && !canNavigateAway()) return false;
     if (page === 'book-details' && data) setSelectedBook(data);
     if (page === 'author-details' && data) setSelectedAuthor(data);
+    if (page === 'home') {
+      const overlayMode = data?.authOverlay;
+      if (overlayMode === 'login' || overlayMode === 'register') {
+        setShowAccessPrompt(false);
+        setPendingNav(null);
+        setHomeAuthMode(overlayMode);
+        setShowHomeAuthOverlay(true);
+      } else if (overlayMode === false) {
+        setShowHomeAuthOverlay(false);
+      }
+    }
     setCurrentPage(page);
     window.scrollTo(0, 0);
     return true;
@@ -462,7 +477,9 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     if (currentPage !== 'home' && !canNavigateAway()) return;
     onLogout();
     setHomeAuthMode('login');
-    setShowHomeAuthOverlay(true);
+    setShowAccessPrompt(false);
+    setPendingNav(null);
+    setShowHomeAuthOverlay(false);
     setCurrentPage('home');
     window.scrollTo(0, 0);
   };
@@ -482,6 +499,8 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
             onAuthSuccess={handleHomeAuthSuccess}
           />
         );
+      case 'plans':
+        return <Plans onNavigate={navigateTo} isGuest={isGuestUser} membershipTier={membershipTier} />;
       case 'categories': return <Categories onNavigate={navigateTo} />;
       case 'favorites': return <Favorites onNavigate={navigateTo} />;
       case 'downloads': return <Downloads onNavigate={navigateTo} />;
@@ -509,17 +528,17 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-bg text-text">
+    <div className="min-h-screen flex flex-col bg-bg text-text overflow-x-hidden">
       {/* Navigation Bar */}
-      <header className="sticky top-0 z-50 w-full border-b border-border bg-bg/80 backdrop-blur-md px-6 lg:px-20 py-3">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-8">
-          <div className="flex items-center gap-8">
+      <header className="sticky top-0 z-50 w-full border-b border-border bg-bg/80 backdrop-blur-md px-4 sm:px-6 lg:px-12 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-5">
+          <div className="flex items-center gap-6">
             <div 
-              className="flex items-center gap-2 text-primary cursor-pointer"
+              className="elibrary-logo flex items-center gap-2 text-primary cursor-pointer"
               onClick={() => navigateTo('home')}
             >
               <Icons.BookOpen className="size-8" />
-              <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">គម្ពី-E-Library</h2>
+              <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">គម្ពី-ELibrary</h2>
             </div>
             <nav className="hidden lg:flex items-center gap-6">
               <NavLink active={currentPage === 'home'} onClick={() => navigateTo('home')}>Home</NavLink>
@@ -528,10 +547,10 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
               <NavLink active={currentPage === 'downloads'} onClick={() => navigateTo('downloads')}>Downloads</NavLink>
             </nav>
           </div>
-            <div className="flex flex-1 justify-end items-center gap-6">
+            <div className="flex flex-1 justify-end items-center gap-4">
               <div
                 ref={searchContainerRef}
-                className="relative hidden md:flex w-[min(520px,44vw)]"
+                className="relative hidden md:flex w-[min(460px,38vw)]"
               >
                 <div
                   className={`w-full rounded-2xl border bg-bg/70 px-4 py-2 backdrop-blur-xl transition-all shadow-sm ${
@@ -672,10 +691,10 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 </button>
               </div>
 
-              <div className="flex items-center gap-3 border-l border-primary/10 pl-6">
+              <div className="flex items-center gap-3 border-l border-primary/10 pl-4">
               <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold text-text">{user.name}</p>
-                <p className="text-primary text-[10px] font-bold uppercase">{user.membership}</p>
+                <p className="text-xs font-bold text-text max-w-[140px] truncate">{user.name}</p>
+                <p className="text-primary text-[10px] font-bold uppercase hidden md:block">{user.membership}</p>
               </div>
               <button
                 type="button"
@@ -692,7 +711,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 <AvatarImage src={user.photo} alt={`${user.name} avatar`} className="h-full w-full object-cover" />
               </button>
               {isGuestUser ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pr-2">
                   <button
                     onClick={() => handleAuthRedirect('login')}
                     className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
@@ -740,7 +759,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
           <div className="col-span-1 md:col-span-1">
             <div className="text-primary flex items-center gap-2 mb-4">
               <Icons.BookOpen className="size-6" />
-              <h2 className="text-lg font-bold">គម្ពី-E-Library</h2>
+              <h2 className="text-lg font-bold">គម្ពី-ELibrary</h2>
             </div>
             <p className="text-sm text-text-muted leading-relaxed">
               Making knowledge accessible to everyone, anywhere in the world. Access thousands of premium titles at your fingertips.
@@ -780,7 +799,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-6 lg:px-20 pt-8 mt-8 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-text-muted">© 2024 គម្ពី-E-Library Inc. All rights reserved.</p>
+          <p className="text-xs text-text-muted">© 2024 គម្ពី-ELibrary Inc. All rights reserved.</p>
           <div className="flex gap-6">
             <Icons.Globe className="size-5 text-text-muted hover:text-primary cursor-pointer transition-colors" />
             <Icons.User className="size-5 text-text-muted hover:text-primary cursor-pointer transition-colors" />
@@ -799,7 +818,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       </nav>
 
       {showAccessPrompt ? (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4 py-10 overflow-y-auto backdrop-blur-md">
           <div className="w-full max-w-xl rounded-3xl border border-border bg-bg p-8 shadow-2xl">
             <div className="flex items-center gap-3 text-primary">
               <Icons.User className="size-6" />

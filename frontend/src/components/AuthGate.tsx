@@ -450,7 +450,7 @@ export default function AuthGate({children}: AuthGateProps) {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#5da7b3] shadow-sm">
               <BookOpen size={18} className="text-white" />
             </div>
-            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">E-Library</span>
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">គម្ពី-ELibrary</span>
           </div>
           <button className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:text-slate-900 dark:border-white/10 dark:bg-[#1d3438] dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">
             Support
@@ -488,7 +488,7 @@ export default function AuthGate({children}: AuthGateProps) {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#5da7b3] shadow-sm">
             <BookOpen size={18} className="text-white" />
           </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">E-Library</span>
+          <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">គម្ពី-ELibrary</span>
         </div>
         <button className="text-sm font-medium text-slate-500 hover:text-slate-900 dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">Help Center</button>
       </header>

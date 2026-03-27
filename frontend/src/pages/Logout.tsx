@@ -23,7 +23,7 @@ export default function Logout({onLogout, onNavigate}: LogoutProps) {
                 <p className="text-[11px] font-black uppercase tracking-[0.25em] text-cyan-600 dark:text-cyan-300">Account Exit</p>
                 <h1 className="text-4xl font-black tracking-tight text-slate-950 md:text-5xl dark:text-white">Confirm logout</h1>
                 <p className="max-w-xl text-base leading-7 text-slate-600 md:text-lg dark:text-slate-300">
-                  You will be signed out on this device and returned to the login page.
+                  You will be signed out on this device and returned to the home page.
                 </p>
               </div>
             </div>

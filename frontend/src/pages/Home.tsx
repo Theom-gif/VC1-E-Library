@@ -3,6 +3,7 @@ import { Icons } from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
 import CoverImage from '../components/CoverImage';
+import ModalPortal from '../components/ModalPortal';
 import { useLibrary } from '../context/LibraryContext';
 
 interface HomeProps {
@@ -46,6 +47,9 @@ export default function Home({
     password: '',
     password_confirmation: '',
   });
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -159,9 +163,10 @@ export default function Home({
       )}
 
       {canShowAuthOverlay && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4 backdrop-blur-md">
-          <div className="w-full max-w-2xl rounded-3xl border border-border bg-bg/90 p-6 md:p-8 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
+        <ModalPortal>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4 py-10 overflow-y-auto backdrop-blur-md">
+            <div className="w-full max-w-2xl rounded-3xl border border-border bg-bg/90 p-6 md:p-8 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-primary">
                   <Icons.User className="size-3" />
@@ -231,17 +236,27 @@ export default function Home({
                 </div>
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Password</label>
-                  <input
-                    type="password"
-                    value={loginForm.password}
-                    onChange={(event) => {
-                      setLoginForm((prev) => ({ ...prev, password: event.target.value }));
-                      setAuthError('');
-                    }}
-                    placeholder="********"
-                    required
-                    className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      value={loginForm.password}
+                      onChange={(event) => {
+                        setLoginForm((prev) => ({...prev, password: event.target.value}));
+                        setAuthError('');
+                      }}
+                      placeholder="********"
+                      required
+                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 pr-12 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword((value) => !value)}
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-text-muted hover:text-text transition-colors"
+                    >
+                      {showLoginPassword ? <Icons.EyeOff className="size-4" /> : <Icons.Eye className="size-4" />}
+                    </button>
+                  </div>
                 </div>
                 {authError && (
                   <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">
@@ -302,29 +317,51 @@ export default function Home({
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Password</label>
-                    <input
-                      type="password"
-                      value={registerForm.password}
-                      onChange={(event) => {
-                        setRegisterForm((prev) => ({ ...prev, password: event.target.value }));
-                        setAuthError('');
-                      }}
-                      required
-                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showRegisterPassword ? 'text' : 'password'}
+                        value={registerForm.password}
+                        onChange={(event) => {
+                          setRegisterForm((prev) => ({...prev, password: event.target.value}));
+                          setAuthError('');
+                        }}
+                        placeholder="********"
+                        required
+                        className="w-full rounded-xl border border-border bg-bg px-4 py-3 pr-12 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterPassword((value) => !value)}
+                        aria-label={showRegisterPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-text-muted hover:text-text transition-colors"
+                      >
+                        {showRegisterPassword ? <Icons.EyeOff className="size-4" /> : <Icons.Eye className="size-4" />}
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Confirm Password</label>
-                    <input
-                      type="password"
-                      value={registerForm.password_confirmation}
-                      onChange={(event) => {
-                        setRegisterForm((prev) => ({ ...prev, password_confirmation: event.target.value }));
-                        setAuthError('');
-                      }}
-                      required
-                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showRegisterConfirmPassword ? 'text' : 'password'}
+                        value={registerForm.password_confirmation}
+                        onChange={(event) => {
+                          setRegisterForm((prev) => ({...prev, password_confirmation: event.target.value}));
+                          setAuthError('');
+                        }}
+                        placeholder="********"
+                        required
+                        className="w-full rounded-xl border border-border bg-bg px-4 py-3 pr-12 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterConfirmPassword((value) => !value)}
+                        aria-label={showRegisterConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-text-muted hover:text-text transition-colors"
+                      >
+                        {showRegisterConfirmPassword ? <Icons.EyeOff className="size-4" /> : <Icons.Eye className="size-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {authError && (
@@ -342,7 +379,8 @@ export default function Home({
               </form>
             )}
           </div>
-        </div>
+          </div>
+        </ModalPortal>
       )}
 
       {/* Hero Section */}
@@ -366,7 +404,10 @@ export default function Home({
             >
               Start Reading
             </button>
-            <button className="bg-surface text-text border border-border px-8 py-3 rounded-xl font-bold hover:bg-white/10 transition-all">
+            <button
+              onClick={() => onNavigate('plans')}
+              className="bg-surface text-text border border-border px-8 py-3 rounded-xl font-bold hover:bg-white/10 transition-all"
+            >
               View Plans
             </button>
           </div>

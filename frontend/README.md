@@ -12,7 +12,9 @@ VITE_API_URL="https://elibrary.pncproject.site"
 VITE_API_PROXY_TARGET="http://localhost:8000"
 ```
 
-3. Start dev server: `npm run dev`
+3. Start dev server:
+   - Recommended (from the repo root): `npm run dev` (starts mock backend on `http://127.0.0.1:8000` + Vite on `http://localhost:3000`)
+   - Frontend-only (from `frontend/`): `npm run dev` (requires a real backend or running `npm run dev:backend` from the repo root)
 
 ---
 

@@ -30,8 +30,23 @@
 }
 
 @layer base {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-bg text-text font-sans transition-colors duration-300;
+  }
+}
+
+@layer components {
+  .elibrary-logo {
+    @apply shrink-0;
+  }
+
+  .elibrary-logo h2 {
+    @apply whitespace-nowrap;
   }
 }
 

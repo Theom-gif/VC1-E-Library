@@ -65,6 +65,16 @@ type BookListAttempt = {
 
 const FALLBACK_BOOKS_PER_PAGE = 15;
 const BOOK_LIST_TIMEOUT_MS = 45000;
+const BOOK_LIST_ENDPOINTS: Array<{path: string; auth?: boolean}> = [
+  // Public list (preferred for Home browsing)
+  {path: '/api/books', auth: false},
+  {path: '/api/books', auth: true},
+  // Some backends expose books only under authenticated namespaces
+  {path: '/api/auth/books', auth: true},
+  // Alternative reader namespace
+  {path: '/api/reader/books', auth: false},
+  {path: '/api/reader/books', auth: true},
+];
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -164,16 +174,13 @@ function buildListAttempts(params?: ListBooksParams): BookListAttempt[] {
   const attempts: BookListAttempt[] = [];
   const seen = new Set<string>();
 
-  const primaryAttempts: BookListAttempt[] = [
-    // Prefer unauthenticated requests first to avoid CORS preflight failures when a token exists.
-    // Most backends expose /api/books publicly for the reader browsing UI.
-    {path: '/api/books', params: normalized, auth: false},
-    {path: '/api/books', params: fallbackPerPage, auth: false},
-    {path: '/api/books', params: withoutPerPage, auth: false},
-    {path: '/api/books', params: normalized, auth: true},
-    {path: '/api/books', params: fallbackPerPage, auth: true},
-    {path: '/api/books', params: withoutPerPage, auth: true},
-  ];
+  const primaryAttempts: BookListAttempt[] = [];
+
+  for (const endpoint of BOOK_LIST_ENDPOINTS) {
+    primaryAttempts.push({path: endpoint.path, params: normalized, auth: endpoint.auth});
+    primaryAttempts.push({path: endpoint.path, params: fallbackPerPage, auth: endpoint.auth});
+    primaryAttempts.push({path: endpoint.path, params: withoutPerPage, auth: endpoint.auth});
+  }
 
   for (const attempt of primaryAttempts) {
     const signature = JSON.stringify([
@@ -197,7 +204,7 @@ function shouldRetryPrimaryListRequest(error: any): boolean {
   const status = Number(error?.status);
   // Network errors (CORS/DNS/SSL/etc) don't have a status. Retry other fallbacks.
   if (!Number.isFinite(status)) return true;
-  return [401, 403, 405, 408, 422, 500, 502, 503, 504].includes(status);
+  return [401, 403, 404, 405, 408, 422, 500, 502, 503, 504].includes(status);
 }
 
 async function withResolverFallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
@@ -226,22 +233,22 @@ export const bookService = {
       })) as ApiEnvelope<any>;
     let payload: ApiEnvelope<any> | null = null;
     let lastError: any = null;
+    let preferredError: any = null;
 
     for (const attempt of buildListAttempts(params)) {
       try {
-        payload = await with404Fallback<ApiEnvelope<any>>(
-          [attempt.path, '/api/auth/books', '/api/reader/books'],
-          (path) => requestList({...attempt, path}),
-        );
+        payload = await requestList(attempt);
         break;
       } catch (error: any) {
         lastError = error;
+        const status = Number(error?.status);
+        if (!preferredError && Number.isFinite(status) && status >= 500) preferredError = error;
         if (!shouldRetryPrimaryListRequest(error)) throw error;
       }
     }
 
     if (!payload) {
-      throw lastError || new Error('Unable to load books.');
+      throw preferredError || lastError || new Error('Unable to load books.');
     }
 
     const rawList =
