@@ -220,16 +220,26 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   React.useEffect(() => {
     const handleAuthRequired = (event: Event) => {
-      // Only show the Reader upsell modal for guest sessions.
-      if (authUser?.id !== 'guest') return;
       const detail = (event as CustomEvent)?.detail || {};
       const reason = detail?.reason;
       const returnTo = detail?.returnTo;
-      setAccessPromptReason(reason === 'feature' ? 'feature' : 'read-limit');
       if (returnTo?.page) {
         setPendingNav({page: returnTo.page, data: returnTo.data});
       }
-      setShowAccessPrompt(true);
+
+      // Guest session: keep the existing upsell/access prompt.
+      if (authUser?.id === 'guest') {
+        setAccessPromptReason(reason === 'feature' ? 'feature' : 'read-limit');
+        setShowAccessPrompt(true);
+        return;
+      }
+
+      // Non-guest session but auth is missing (token cleared/expired): show login overlay.
+      setShowAccessPrompt(false);
+      setHomeAuthMode('login');
+      setShowHomeAuthOverlay(true);
+      setCurrentPage('home');
+      window.scrollTo(0, 0);
     };
     if (typeof window !== 'undefined') {
       window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
@@ -239,7 +249,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
         window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
       }
     };
-  }, []);
+  }, [authUser?.id]);
 
   React.useEffect(() => {
     const handleTierChange = (event: Event) => {
