@@ -404,12 +404,6 @@ export default function Home({
             >
               Start Reading
             </button>
-            <button
-              onClick={() => onNavigate('plans')}
-              className="bg-surface text-text border border-border px-8 py-3 rounded-xl font-bold hover:bg-white/10 transition-all"
-            >
-              View Plans
-            </button>
           </div>
         </div>
         <div className="absolute right-0 top-0 bottom-0 w-1/3 hidden lg:block">

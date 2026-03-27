@@ -96,8 +96,15 @@ function parseContentDispositionFilename(contentDisposition: string | null): str
 function ensureAbsoluteUrl(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return '';
+  if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
+
+  const origin = currentWindowOrigin();
+  if (trimmed.startsWith('/') && origin) return `${origin}${trimmed}`;
+
+  const base = String(API_BASE_URL || '').trim() || origin;
   try {
-    return new URL(trimmed, API_BASE_URL).toString();
+    if (!base) return trimmed;
+    return new URL(trimmed, base).toString();
   } catch {
     return trimmed;
   }
@@ -105,8 +112,8 @@ function ensureAbsoluteUrl(input: string): string {
 
 function sameOrigin(a: string, b: string): boolean {
   try {
-    const ua = new URL(a);
     const ub = new URL(b);
+    const ua = new URL(a, ub.origin);
     return ua.origin === ub.origin;
   } catch {
     return false;
@@ -124,7 +131,17 @@ function currentWindowOrigin(): string {
 function shouldAttachDownloadAuthHeader(url: string): boolean {
   const origin = currentWindowOrigin();
   if (!origin) return false;
-  return sameOrigin(url, origin);
+  if (sameOrigin(url, origin)) return true;
+
+  const apiBaseUrl = String(API_BASE_URL || '').trim();
+  if (!apiBaseUrl) return false;
+  try {
+    const apiOrigin = new URL(apiBaseUrl, origin).origin;
+    const resolved = new URL(url, origin);
+    return resolved.origin === apiOrigin;
+  } catch {
+    return false;
+  }
 }
 
 async function resolveDownloadUrl(bookId: string): Promise<string> {
@@ -185,10 +202,22 @@ async function fetchBlobWithProgress(
   try {
     response = await requestDownload(canUseAuthHeader);
   } catch (error: any) {
-    if (!canUseAuthHeader) {
+    if (canUseAuthHeader) {
+      response = await requestDownload(false);
+    } else if (token) {
+      response = await requestDownload(true);
+    } else {
       throw new Error(error?.message || 'Failed to fetch download file.');
     }
-    response = await requestDownload(false);
+  }
+
+  // If the backend requires auth for file URLs and we didn't attach it, retry once with the bearer token.
+  if (!response.ok && !canUseAuthHeader && token && (response.status === 401 || response.status === 403)) {
+    try {
+      response = await requestDownload(true);
+    } catch {
+      // Keep the original response for error messaging below.
+    }
   }
 
   if (!response.ok) {
