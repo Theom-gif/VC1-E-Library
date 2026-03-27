@@ -23,6 +23,7 @@ export type ActiveDownload = {
   totalBytes: number | null;
   speedBytesPerSec: number;
   error: string | null;
+  downloadUrl?: string;
   startedAt: number;
   updatedAt: number;
 };
@@ -182,6 +183,41 @@ async function syncDownloadRecordToBackend(
   }
 }
 
+function diagnoseFetchFailure(url: string): string {
+  const origin = currentWindowOrigin();
+  const apiBaseUrl = String(API_BASE_URL || '').trim();
+
+  let resolved: URL | null = null;
+  try {
+    resolved = new URL(url, origin || 'http://localhost');
+  } catch {
+    resolved = null;
+  }
+
+  if (resolved && origin && origin.startsWith('https:') && resolved.protocol === 'http:') {
+    return 'Download blocked: file URL is http on an https site (mixed content).';
+  }
+
+  if (resolved && origin) {
+    let apiOrigin = '';
+    try {
+      apiOrigin = apiBaseUrl ? new URL(apiBaseUrl, origin).origin : '';
+    } catch {
+      apiOrigin = '';
+    }
+
+    if (resolved.origin !== origin && apiOrigin && resolved.origin !== apiOrigin) {
+      return `Download blocked by CORS: file host ${resolved.origin} does not allow this app origin (${origin}). Ask the backend to return a signed public URL or enable CORS for file downloads.`;
+    }
+
+    if (resolved.origin !== origin && apiOrigin && resolved.origin === apiOrigin) {
+      return `Download blocked by CORS: backend origin ${apiOrigin} does not allow this app origin (${origin}). Enable CORS (and allow Authorization header if needed).`;
+    }
+  }
+
+  return 'Failed to fetch download file. Check your internet, backend availability, and CORS settings.';
+}
+
 async function fetchBlobWithProgress(
   url: string,
   controller: AbortController,
@@ -207,7 +243,9 @@ async function fetchBlobWithProgress(
     } else if (token) {
       response = await requestDownload(true);
     } else {
-      throw new Error(error?.message || 'Failed to fetch download file.');
+      const debug = Boolean((import.meta as any)?.env?.DEV);
+      const message = diagnoseFetchFailure(url);
+      throw new Error(debug && error?.message ? `${message} (${error.message})` : message);
     }
   }
 
@@ -221,6 +259,9 @@ async function fetchBlobWithProgress(
   }
 
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Download rejected (401/403). The backend must return a signed public URL or allow token-based downloads with correct CORS.');
+    }
     throw new Error(`Download failed with status ${response.status}`);
   }
 
@@ -334,6 +375,18 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
 
       try {
         const downloadUrl = await resolveDownloadUrl(bookId);
+        setActiveByBookId((prev) => {
+          const current = prev[bookId];
+          if (!current) return prev;
+          return {
+            ...prev,
+            [bookId]: {
+              ...current,
+              downloadUrl,
+              updatedAt: Date.now(),
+            },
+          };
+        });
         void syncDownloadRecordToBackend(bookId, {status: 'started'});
         const {blob, mimeType, fileName} = await fetchBlobWithProgress(downloadUrl, controller, (snapshot) => {
           setActiveByBookId((prev) => {

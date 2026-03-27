@@ -102,6 +102,15 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {item.status === 'error' && item.downloadUrl ? (
+                    <button
+                      className="p-2 rounded-lg bg-surface hover:bg-white/10 text-text-muted transition-all"
+                      onClick={() => window.open(item.downloadUrl, '_blank', 'noreferrer')}
+                      title="Open file in browser"
+                    >
+                      <Icons.ExternalLink className="size-4" />
+                    </button>
+                  ) : null}
                   <button
                     className="p-2 rounded-lg bg-surface hover:bg-white/10 text-text-muted transition-all"
                     onClick={() => (item.status === 'downloading' ? pause(item.bookId) : resume(item.book))}
