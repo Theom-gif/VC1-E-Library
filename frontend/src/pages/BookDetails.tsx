@@ -575,6 +575,18 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       setRatings(refreshed);
       setSelectedRating(refreshed.user_rating || nextRating);
     } catch (error: any) {
+      if (Number(error?.status) === 401) {
+        savePendingBookRating(normalizedBookId, nextRating);
+        authService.clearToken();
+        requestAuth('feature', {
+          returnTo: {
+            page: 'book-details',
+            data: currentBook,
+          },
+        });
+        setRatingError('Session expired. Please login to submit your rating.');
+        return;
+      }
       setRatingError(error?.data?.message || error?.message || 'Unable to submit your rating.');
     } finally {
       setIsSubmittingRating(false);

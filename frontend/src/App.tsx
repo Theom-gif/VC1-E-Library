@@ -102,6 +102,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const {books, newArrivals} = useLibrary();
   const [membershipTier, setMembershipTier] = useState<MembershipTier>(() => getMembershipTier());
   const [showAccessPrompt, setShowAccessPrompt] = useState(false);
+  const [showReauthPrompt, setShowReauthPrompt] = useState(false);
   const [pendingNav, setPendingNav] = useState<{page: Page; data?: any} | null>(null);
   const [accessPromptReason, setAccessPromptReason] = useState<'feature' | 'read-limit'>('feature');
   const [showHomeAuthOverlay, setShowHomeAuthOverlay] = useState(false);
@@ -169,7 +170,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
-    const shouldLockScroll = Boolean(showAccessPrompt || (showHomeAuthOverlay && authUser?.id === 'guest'));
+    const shouldLockScroll = Boolean(showAccessPrompt || showReauthPrompt || (showHomeAuthOverlay && authUser?.id === 'guest'));
     if (!shouldLockScroll) return;
 
     const body = document.body;
@@ -187,7 +188,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       body.style.overflow = previousOverflow;
       body.style.paddingRight = previousPaddingRight;
     };
-  }, [authUser?.id, showAccessPrompt, showHomeAuthOverlay]);
+  }, [authUser?.id, showAccessPrompt, showHomeAuthOverlay, showReauthPrompt]);
   React.useEffect(() => {
     let isMounted = true;
 
@@ -240,10 +241,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
       // Non-guest session but auth is missing (token cleared/expired): show login overlay.
       setShowAccessPrompt(false);
-      setHomeAuthMode('login');
-      setShowHomeAuthOverlay(true);
-      setCurrentPage('home');
-      window.scrollTo(0, 0);
+      setShowReauthPrompt(true);
     };
     if (typeof window !== 'undefined') {
       window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
@@ -275,6 +273,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   React.useEffect(() => {
     if (isGuestUser) return;
     setShowAccessPrompt(false);
+    setShowReauthPrompt(false);
     setShowHomeAuthOverlay(false);
     setPendingNav(null);
     if (authUser?.role === 'user' && membershipTier !== 'reader') {
@@ -322,6 +321,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const handleAuthRedirect = (mode: 'login' | 'register' = 'login') => {
     if (currentPage !== 'home' && !canNavigateAway()) return;
     setShowAccessPrompt(false);
+    setShowReauthPrompt(false);
     setHomeAuthMode(mode);
     setShowHomeAuthOverlay(true);
     setCurrentPage('home');
@@ -330,6 +330,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   const handleHomeAuthSuccess = () => {
     setShowHomeAuthOverlay(false);
+    setShowReauthPrompt(false);
     const next = pendingNav;
     setPendingNav(null);
     if (next) {
@@ -492,6 +493,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     onLogout();
     setHomeAuthMode('login');
     setShowAccessPrompt(false);
+    setShowReauthPrompt(false);
     setPendingNav(null);
     setShowHomeAuthOverlay(false);
     setCurrentPage('home');
@@ -866,6 +868,47 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 transition-all"
               >
                 Register / Login as Reader
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showReauthPrompt ? (
+        <div className="fixed inset-0 z-[121] flex items-center justify-center bg-black/60 px-4 py-10 overflow-y-auto backdrop-blur-md">
+          <div className="w-full max-w-xl rounded-3xl border border-border bg-bg p-8 shadow-2xl">
+            <div className="flex items-center gap-3 text-primary">
+              <Icons.User className="size-6" />
+              <p className="text-xs font-bold uppercase tracking-widest">Session Expired</p>
+            </div>
+            <h3 className="mt-4 text-2xl font-bold text-text">
+              Please login again to continue.
+            </h3>
+            <p className="mt-2 text-sm text-text-muted leading-relaxed">
+              Your sign-in session expired while performing this action. Open the login modal to continue without reloading this page.
+            </p>
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReauthPrompt(false);
+                }}
+                className="flex-1 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-bold text-text-muted hover:text-text hover:bg-white/5 transition-all"
+              >
+                Not Now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReauthPrompt(false);
+                  setHomeAuthMode('login');
+                  setShowHomeAuthOverlay(true);
+                  setCurrentPage('home');
+                  window.scrollTo(0, 0);
+                }}
+                className="flex-1 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary/90 transition-all"
+              >
+                Login Now
               </button>
             </div>
           </div>
