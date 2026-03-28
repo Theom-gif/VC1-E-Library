@@ -1,7 +1,9 @@
 import React, {createContext, useCallback, useContext, useMemo, useRef, useState} from 'react';
 import type {BookType} from '../types';
 import {API_BASE_URL} from '../service/apiClient';
+import {useToast} from '../components/ToastProvider';
 import bookService from '../service/bookService';
+import notificationService from '../service/notificationService';
 import {
   deleteDownload,
   getDownload,
@@ -11,6 +13,7 @@ import {
   type StoredDownload,
 } from '../offline/downloadsDb';
 import {openReaderTab} from '../utils/openReaderTab';
+import readingSessionService from '../service/readingSessionService';
 
 type ActiveDownloadStatus = 'downloading' | 'paused' | 'error';
 
@@ -27,6 +30,46 @@ export type ActiveDownload = {
   startedAt: number;
   updatedAt: number;
 };
+
+type LocalNotification = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  createdAt: string;
+  timeLabel: string;
+  unread: boolean;
+  actionUrl?: string;
+};
+
+const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
+
+function loadLocalNotifications(): LocalNotification[] {
+  try {
+    const json = localStorage.getItem(LOCAL_NOTIFICATIONS_KEY);
+    if (!json) return [];
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => item && typeof item.id === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalNotifications(items: LocalNotification[]) {
+  try {
+    localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(items.slice(0, 100)));
+  } catch {
+    // ignore
+  }
+}
+
+function emitLocalNotification(notification: LocalNotification) {
+  const existing = loadLocalNotifications();
+  const next = [notification, ...existing.filter((item) => item.id !== notification.id)].slice(0, 100);
+  saveLocalNotifications(next);
+  window.dispatchEvent(new CustomEvent('local-notification', {detail: notification}));
+}
 
 type DownloadState = {
   active: ActiveDownload[];
@@ -314,6 +357,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
   const [activeByBookId, setActiveByBookId] = useState<Record<string, ActiveDownload>>({});
   const [completed, setCompleted] = useState<StoredDownload[]>([]);
   const [storageUsed, setStorageUsed] = useState(0);
+  const toast = useToast();
 
   const refresh = useCallback(async () => {
     const [items, used] = await Promise.all([listDownloads(), storageUsedBytes()]);
@@ -352,6 +396,20 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
       const bookId = normalizeBackendBookId(book?.id);
       if (!bookId) throw new Error('Cannot download: missing book id.');
       if (controllersRef.current.has(bookId)) return;
+
+      let readingSessionId: string | null = null;
+      if (bookId) {
+        try {
+          const rs = await readingSessionService.start({
+            book_id: bookId,
+            started_at: new Date().toISOString(),
+            source: 'web',
+          });
+          readingSessionId = rs.sessionId;
+        } catch {
+          // optional: can fail without blocking download
+        }
+      }
 
       const controller = new AbortController();
       controllersRef.current.set(bookId, controller);
@@ -429,6 +487,43 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
           mime_type: mimeType,
         });
         await refresh();
+
+        if (readingSessionId) {
+          try {
+            await readingSessionService.finish(readingSessionId, {
+              ended_at: new Date().toISOString(),
+            });
+          } catch {
+            // ignore: not critical for download flow
+          }
+        }
+
+        const completedNotification: LocalNotification = {
+          id: `local-download-${bookId}-${Date.now()}`,
+          type: 'download',
+          title: 'Download Complete',
+          message: `${book.title || 'Book'} has been downloaded.`,
+          createdAt: new Date().toISOString(),
+          timeLabel: 'just now',
+          unread: true,
+        };
+        emitLocalNotification(completedNotification);
+
+        // Backend notification (if supported): create user notification for download completion.
+        void notificationService
+          .create({
+            type: 'download',
+            title: 'Download Complete',
+            message: `${book.title || 'Book'} has been downloaded.`,
+            action_url: `/downloads`,
+            payload: {book_id: bookId},
+            audience: 'user',
+          })
+          .catch(() => {
+            // ignore if backend doesn't support this route
+          });
+
+        toast.push({kind: 'success', message: `Downloaded "${book.title || bookId}" successfully.`});
       } catch (error: any) {
         const aborted = controller.signal.aborted;
         const message = aborted ? null : error?.message || 'Download failed.';
@@ -445,6 +540,9 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
             },
           };
         });
+        if (!aborted && message) {
+          toast.push({kind: 'error', message: message});
+        }
         return;
       } finally {
         controllersRef.current.delete(bookId);

@@ -24,9 +24,12 @@ export type ReadingLogPayload = {
   user_id?: string | number;
 };
 
-function pickString(value: unknown): string {
-  const normalized = String(value ?? '').trim();
-  return normalized ? normalized : '';
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+  return '';
 }
 
 function normalizeKey(value: unknown): AchievementKey | '' {
@@ -142,4 +145,3 @@ export const achievementService = {
 };
 
 export default achievementService;
-

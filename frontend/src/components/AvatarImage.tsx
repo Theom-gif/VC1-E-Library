@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {API_BASE_URL} from '../service/apiClient';
-import defaultAvatarUrl from '../utils/defaultAvatar';
+import defaultAvatarUrl from '../test/defaultAvatar';
 
 type AvatarImageProps = {
   src: string;

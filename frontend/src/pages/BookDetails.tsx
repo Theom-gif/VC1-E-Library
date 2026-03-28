@@ -10,6 +10,7 @@ import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
 import {PENDING_BOOK_RATING_KEY, requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 import authService from '../service/authService';
+import {API_BASE_URL} from '../service/apiClient';
 
 interface BookDetailsProps {
   book?: BookType | null;
@@ -18,10 +19,12 @@ interface BookDetailsProps {
 
 interface Comment {
   id: string;
+  userId?: string;
   user: string;
   avatar: string;
   text: string;
   time: string;
+  createdAt?: string;
   likes: number;
   replies: number;
   rating: number;
@@ -81,14 +84,78 @@ function pickNumber(...values: unknown[]): number {
   return 0;
 }
 
-function formatRelativeTime(value: unknown): string {
+const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
+const SESSION_KEY = 'elibrary_session';
+
+function safeJsonParse<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function readCurrentProfile(): {name: string; photo: string} {
+  const session = safeJsonParse<any>(typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null, {});
+  const cache = safeJsonParse<any>(typeof localStorage !== 'undefined' ? localStorage.getItem(PROFILE_CACHE_KEY) : null, {});
+  return {
+    name: pickString(cache?.name, session?.name, 'Library User'),
+    photo: pickString(cache?.photo, ''),
+  };
+}
+
+function asAbsoluteAssetUrl(value: string): string {
+  const raw = String(value || '').trim().replace(/\\/g, '/');
+  if (!raw) return '';
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw;
+
+  const base =
+    String(API_BASE_URL || '').trim().replace(/\/+$/, '') ||
+    (typeof window !== 'undefined' ? String(window.location.origin || '') : '');
+
+  const withoutPublicPrefix = raw.replace(/^\/?public\//, '');
+  const withoutAppPublic = withoutPublicPrefix.replace(/^\/?storage\/app\/public\//, 'storage/');
+  const withoutPublicStorage = withoutAppPublic.replace(/^\/?public\/storage\//, 'storage/');
+  const normalized = withoutPublicStorage.replace(/^\/+/, '');
+
+  if (!base) return raw.startsWith('/') ? raw : `/${normalized}`;
+  if (raw.startsWith('/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('storage/')) return `${base}/${normalized}`;
+  if (normalized.startsWith('uploads/') || normalized.startsWith('images/') || normalized.startsWith('assets/')) {
+    return `${base}/${normalized}`;
+  }
+  return `${base}/storage/${normalized}`;
+}
+
+function parseRelativeAgoToIso(value: string): string {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  const match = raw.match(/^(\d+)\s*(second|minute|hour|day|week)s?\s*ago$/i);
+  if (!match) return '';
+  const n = Math.max(0, Number(match[1] || 0));
+  const unit = match[2];
+  const seconds =
+    unit === 'week'
+      ? n * 7 * 24 * 60 * 60
+      : unit === 'day'
+        ? n * 24 * 60 * 60
+        : unit === 'hour'
+          ? n * 60 * 60
+          : unit === 'minute'
+            ? n * 60
+            : n;
+  return new Date(Date.now() - seconds * 1000).toISOString();
+}
+
+function formatRelativeTime(value: unknown, nowMs = Date.now()): string {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
   const date = new Date(raw);
   const ms = date.getTime();
   if (Number.isNaN(ms)) return raw;
 
-  const diffSeconds = Math.round((Date.now() - ms) / 1000);
+  const diffSeconds = Math.round((nowMs - ms) / 1000);
   if (diffSeconds < 10) return 'Just now';
   if (diffSeconds < 60) return `${diffSeconds} seconds ago`;
 
@@ -105,16 +172,40 @@ function formatRelativeTime(value: unknown): string {
 function normalizeComment(raw: any, fallbackIndex: number): Comment {
   const source = pickObject(raw);
   const user = pickObject(source?.user);
+  const profile = readCurrentProfile();
+  const first = pickString(user?.firstname, source?.firstname, source?.first_name);
+  const last = pickString(user?.lastname, source?.lastname, source?.last_name);
+  const derivedName = pickString(`${first} ${last}`.trim());
   const id = pickString(source?.id, source?.review_id, source?.comment_id, `local-${fallbackIndex + 1}`);
-  const avatar = pickString(user?.avatar, user?.photo, source?.avatar, source?.user_avatar);
-  const createdAt = pickString(source?.created_at, source?.createdAt, source?.time);
+  const userId = pickString(user?.id, user?.user_id, source?.user_id, source?.userId);
+  const avatarRaw = pickString(
+    user?.avatar,
+    user?.avatar_url,
+    user?.photo,
+    user?.photo_url,
+    user?.profile_photo_url,
+    user?.profile_photo,
+    user?.image,
+    source?.avatar,
+    source?.user_avatar,
+    source?.user_photo,
+    source?.user_image,
+  );
+  const createdAtRaw = pickString(source?.created_at, source?.createdAt, source?.timestamp, source?.time);
+  const derivedCreatedAt = parseRelativeAgoToIso(createdAtRaw);
+  const createdAt = derivedCreatedAt || createdAtRaw;
   const rating = pickNumber(source?.rating, source?.stars, source?.score);
+  const displayName = pickString(user?.name, derivedName, source?.user_name, source?.username, profile.name, 'Library User');
+  const avatarFallback = displayName.trim().toLowerCase() === profile.name.trim().toLowerCase() ? profile.photo : '';
+  const avatar = asAbsoluteAssetUrl(avatarRaw) || asAbsoluteAssetUrl(avatarFallback) || 'https://picsum.photos/seed/user/100/100';
   return {
     id,
-    user: pickString(user?.name, source?.user_name, source?.username, 'Library User'),
-    avatar: avatar || 'https://picsum.photos/seed/user/100/100',
+    userId: userId || undefined,
+    user: displayName,
+    avatar,
     text: pickString(source?.text, source?.content, source?.comment, source?.body, source?.message),
-    time: formatRelativeTime(createdAt) || createdAt || '',
+    time: createdAt ? formatRelativeTime(createdAt) : pickString(source?.time) || '',
+    createdAt: createdAt && !Number.isNaN(new Date(createdAt).getTime()) ? new Date(createdAt).toISOString() : undefined,
     likes: Math.max(0, Math.round(pickNumber(source?.likes, source?.likes_count, source?.like_count))),
     replies: Math.max(0, Math.round(pickNumber(source?.replies, source?.replies_count, source?.reply_count))),
     rating: Math.max(0, Math.min(5, rating || 0)),
@@ -168,6 +259,13 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const {isFavorite, toggle} = useFavorites();
   const currentBook = book ?? books[0];
   if (!currentBook) return null;
+  const currentProfile = readCurrentProfile();
+  const [nowTick, setNowTick] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const active = activeById(String(currentBook.id));
   const downloaded = isDownloaded(String(currentBook.id));
@@ -184,6 +282,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const [isSubmittingComment, setIsSubmittingComment] = React.useState(false);
   const [commentsError, setCommentsError] = React.useState('');
   const [comments, setComments] = React.useState<Comment[]>([]);
+  const [commentsPage, setCommentsPage] = React.useState(1);
+  const [commentsHasMore, setCommentsHasMore] = React.useState(false);
+  const [commentsTotal, setCommentsTotal] = React.useState<number | null>(null);
+  const [isLoadingMoreComments, setIsLoadingMoreComments] = React.useState(false);
+  const [commentsReloadKey, setCommentsReloadKey] = React.useState(0);
 
   const handlePostComment = async () => {
     const nextText = commentText.trim();
@@ -311,29 +414,134 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
 
     setIsLoadingComments(true);
     setCommentsError('');
+    setCommentsPage(1);
+    setCommentsHasMore(false);
+    setCommentsTotal(null);
 
-    void reviewService
-      .listForBook(normalizedBookId, {page: 1, per_page: 10, sort: 'newest'})
-      .then((payload: any) => {
+    const pickList = (payload: any) => {
+      const source = pickObject(payload);
+      return pickArray(source?.data?.data, source?.data, source?.results, source?.items, payload);
+    };
+
+    const pickMeta = (payload: any) => {
+      const source = pickObject(payload);
+      const candidates = [
+        source?.meta,
+        source?.data?.meta,
+        source?.data?.pagination,
+        source?.pagination,
+        source?.data,
+        source,
+      ];
+      for (const candidate of candidates) {
+        const obj = pickObject(candidate);
+        if (Object.keys(obj).length) return obj;
+      }
+      return {};
+    };
+
+    const loadPage = async (page: number, {append}: {append: boolean}) => {
+      if (!alive) return;
+      if (append) setIsLoadingMoreComments(true);
+      else setIsLoadingComments(true);
+      setCommentsError('');
+      try {
+        const payload: any = await reviewService.listForBook(normalizedBookId, {page, per_page: 10, sort: 'newest'});
         if (!alive) return;
-        const source = pickObject(payload);
-        const items = pickArray(source?.data, source?.results, source?.items, payload);
-        setComments(items.map((item, index) => normalizeComment(item, index)));
-      })
-      .catch((error: any) => {
+
+        const list = pickList(payload);
+        const normalized = list.map((item: any, index: number) => normalizeComment(item, (page - 1) * 10 + index));
+
+        setComments((prev) => (append ? [...prev, ...normalized] : normalized));
+
+        const meta = pickMeta(payload);
+        const total = Number(meta?.total ?? meta?.count ?? meta?.total_items ?? meta?.totalItems);
+        const lastPage = Number(meta?.last_page ?? meta?.lastPage ?? meta?.total_pages ?? meta?.totalPages);
+        const currentPage = Number(meta?.current_page ?? meta?.currentPage ?? page);
+        const nextPageUrl = pickString(meta?.next_page_url, meta?.nextPageUrl, meta?.links?.next);
+        if (Number.isFinite(total) && total >= 0) setCommentsTotal(total);
+        if (nextPageUrl) {
+          setCommentsHasMore(true);
+        } else if (Number.isFinite(lastPage) && lastPage >= 1) {
+          setCommentsHasMore(currentPage < lastPage);
+        } else if (Number.isFinite(total) && total >= 0) {
+          const loaded = (page - 1) * 10 + normalized.length;
+          setCommentsHasMore(loaded < total);
+        } else {
+          setCommentsHasMore(normalized.length >= 10);
+        }
+
+        setCommentsPage(page);
+      } catch (error: any) {
         if (!alive) return;
         if (Number(error?.status) !== 404) {
           setCommentsError(error?.data?.message || error?.message || 'Unable to load comments.');
         }
-      })
-      .finally(() => {
-        if (alive) setIsLoadingComments(false);
-      });
+      } finally {
+        if (!alive) return;
+        if (append) setIsLoadingMoreComments(false);
+        setIsLoadingComments(false);
+      }
+    };
+
+    void loadPage(1, {append: false});
 
     return () => {
       alive = false;
     };
-  }, [currentBook.id]);
+  }, [currentBook.id, commentsReloadKey]);
+
+  const handleLoadMoreComments = async () => {
+    if (isLoadingComments || isLoadingMoreComments || !commentsHasMore) return;
+    const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    const nextPage = commentsPage + 1;
+    setIsLoadingMoreComments(true);
+    setCommentsError('');
+    try {
+      const payload: any = await reviewService.listForBook(normalizedBookId, {page: nextPage, per_page: 10, sort: 'newest'});
+      const source = pickObject(payload);
+      const items = pickArray(source?.data?.data, source?.data, source?.results, source?.items, payload);
+      const normalized = items.map((item, index) => normalizeComment(item, (nextPage - 1) * 10 + index));
+      setComments((prev) => [...prev, ...normalized]);
+
+      const metaCandidates = [
+        source?.meta,
+        source?.data?.meta,
+        source?.data?.pagination,
+        source?.pagination,
+        source?.data,
+        source,
+      ];
+      let meta: Record<string, any> = {};
+      for (const candidate of metaCandidates) {
+        const obj = pickObject(candidate);
+        if (Object.keys(obj).length) {
+          meta = obj;
+          break;
+        }
+      }
+
+      const lastPage = Number(meta?.last_page ?? meta?.lastPage ?? meta?.total_pages ?? meta?.totalPages);
+      const currentPage = Number(meta?.current_page ?? meta?.currentPage ?? nextPage);
+      const nextPageUrl = pickString(meta?.next_page_url, meta?.nextPageUrl, meta?.links?.next);
+      if (nextPageUrl) {
+        setCommentsHasMore(true);
+      } else if (Number.isFinite(lastPage) && lastPage >= 1) {
+        setCommentsHasMore(currentPage < lastPage);
+      } else {
+        setCommentsHasMore(normalized.length >= 10);
+      }
+      const total = Number(meta?.total ?? meta?.count ?? meta?.total_items ?? meta?.totalItems);
+      if (Number.isFinite(total) && total >= 0) setCommentsTotal(total);
+      setCommentsPage(nextPage);
+    } catch (error: any) {
+      if (Number(error?.status) !== 404) {
+        setCommentsError(error?.data?.message || error?.message || 'Unable to load more comments.');
+      }
+    } finally {
+      setIsLoadingMoreComments(false);
+    }
+  };
 
   const submitRating = async (nextRating: number) => {
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
@@ -662,17 +870,22 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold text-text">Community Discussion</h3>
               <span className="text-xs font-bold text-text-muted uppercase tracking-widest">
-                {isLoadingComments ? 'Loading...' : `${comments.length} Comments`}
+                {isLoadingComments && comments.length === 0
+                  ? 'Loading...'
+                  : `${(commentsTotal ?? comments.length).toLocaleString()} Comments`}
               </span>
             </div>
             {commentsError ? <p className="text-sm font-semibold text-red-500">{commentsError}</p> : null}
 
             {/* Comment Input */}
             <div className="space-y-4">
-              <div className="flex gap-4">
-                <div className="size-10 rounded-full bg-primary/20 shrink-0 overflow-hidden border border-border">
-                  <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuD1haEXmvd-9CjxAle36WW70lL3Mx9lorZ1Q4k0kbEI9nmCj-ma1YtFbS2GBfNRTBE5BU01cGbyXGzI6wE9hbeZ-RY34Gy-JJLG7xxgWRY4HEFdxc5q-LNWEd7TElRZFb4C4zbB7wby_Mv0-gV-v1vD1AzSJCtmL1-hvVMi7Z68G5TjPhr8SoVt31XZrcogHgVqvw4aN3W9Y6WZdW0NWNbBCUnRffhuITfWhijdjYig6s_j3euhV_5pa3Fs4O5MNWESVnMB286u1ZI" alt="User" />
-                </div>
+                <div className="flex gap-4">
+                  <div className="size-10 rounded-full bg-primary/20 shrink-0 overflow-hidden border border-border">
+                    <img
+                      src={asAbsoluteAssetUrl(currentProfile.photo) || 'https://picsum.photos/seed/user/100/100'}
+                      alt={currentProfile.name || 'User'}
+                    />
+                  </div>
                 <div className="flex-1 space-y-3">
                   <textarea 
                     value={commentText}
@@ -697,6 +910,14 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <div className="space-y-4">
               {isLoadingComments ? (
                 <p className="text-sm text-text-muted">Loading comments...</p>
+              ) : commentsError && !comments.length ? (
+                <button
+                  type="button"
+                  onClick={() => setCommentsReloadKey((prev) => prev + 1)}
+                  className="w-fit rounded-xl border border-border bg-surface px-4 py-2 text-sm font-bold text-text-muted hover:text-text hover:border-primary/30 transition-all"
+                >
+                  Retry
+                </button>
               ) : !comments.length ? (
                 <p className="text-sm text-text-muted">No comments yet. Be the first to comment.</p>
               ) : null}
@@ -709,11 +930,15 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       </div>
                       <div>
                         <p className="text-sm font-bold text-text">{comment.user}</p>
-                        <p className="text-[10px] text-text-muted">{comment.time}</p>
+                        <p className="text-[10px] text-text-muted">
+                          {comment.createdAt ? formatRelativeTime(comment.createdAt, nowTick) : comment.time}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {(comment.canEdit || comment.user === 'Alex Johnson') && editingCommentId !== comment.id && (
+                      {(comment.canEdit ||
+                        comment.user.trim().toLowerCase() === currentProfile.name.trim().toLowerCase()) &&
+                        editingCommentId !== comment.id && (
                         <button 
                           onClick={() => handleEditStart(comment)}
                           className="text-[10px] font-bold text-primary uppercase tracking-widest hover:underline"
@@ -768,9 +993,20 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               ))}
             </div>
             
-            <button className="w-full py-3 rounded-xl border border-border text-sm font-bold text-text-muted hover:bg-surface transition-all">
-              View All {comments.length + 123} Reviews
-            </button>
+            {commentsHasMore ? (
+              <button
+                type="button"
+                onClick={() => void handleLoadMoreComments()}
+                disabled={isLoadingMoreComments || isLoadingComments}
+                className="w-full py-3 rounded-xl border border-border text-sm font-bold text-text-muted hover:bg-surface transition-all disabled:opacity-60"
+              >
+                {isLoadingMoreComments
+                  ? 'Loading more...'
+                  : commentsTotal && commentsTotal > comments.length
+                    ? `View All ${commentsTotal.toLocaleString()} Reviews`
+                    : 'View More Reviews'}
+              </button>
+            ) : null}
           </div>
         </div>
       </section>

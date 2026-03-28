@@ -42,6 +42,7 @@ import {
   Trophy,
   CheckCheck,
   BellOff,
+  ExternalLink,
   X
 } from 'lucide-react';
 import {API_BASE_URL} from './service/apiClient';
@@ -90,6 +91,7 @@ export const Icons = {
   Trophy,
   CheckCheck,
   BellOff,
+  ExternalLink,
   X
 };
 

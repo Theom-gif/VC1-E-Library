@@ -26,6 +26,24 @@ export const notificationService = {
       apiClient.get(withQuery(path, params as any), {headers: {Accept: 'application/json'}}),
     ),
 
+  listAuthor: (params?: ListNotificationsParams) =>
+    withAliasFallback(['/api/author/notifications', '/api/notifications'], (path) =>
+      apiClient.get(withQuery(path, params as any), {headers: {Accept: 'application/json'}}),
+    ),
+
+  listAdmin: (params?: ListNotificationsParams) =>
+    withAliasFallback(['/api/admin/notifications', '/api/notifications'], (path) =>
+      apiClient.get(withQuery(path, params as any), {headers: {Accept: 'application/json'}}),
+    ),
+
+  send: (payload: {title: string; message: string; type?: string; audience?: string; action_url?: string; user_id?: string}) =>
+    apiClient.post('/api/admin/notifications/send', payload, {headers: {Accept: 'application/json'}}),
+
+  create: (payload: {type?: string; title: string; message: string; action_url?: string; payload?: any; audience?: string}) =>
+    withAliasFallback(['/api/user/notifications', '/api/notifications'], (path) =>
+      apiClient.post(path, payload, {headers: {Accept: 'application/json'}}),
+    ),
+
   markAllRead: () =>
     withAliasFallback(['/api/notifications/read-all', '/api/user/notifications/read-all'], (path) =>
       apiClient.post(path, undefined, {headers: {Accept: 'application/json'}}),

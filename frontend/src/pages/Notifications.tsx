@@ -2,6 +2,7 @@ import React from 'react';
 import { Icons } from '../types';
 import { motion } from 'motion/react';
 import notificationService from '../service/notificationService';
+import authService from '../service/authService';
 
 interface NotificationsPageProps {
   onNavigate: (page: any, data?: any) => void;
@@ -17,6 +18,46 @@ type UiNotification = {
   unread: boolean;
   actionUrl?: string;
 };
+
+const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
+
+function loadLocalNotifications(): UiNotification[] {
+  try {
+    const json = localStorage.getItem(LOCAL_NOTIFICATIONS_KEY);
+    if (!json) return [];
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item.id === 'string')
+      .map((item) => ({
+        id: String(item.id),
+        type: String(item.type || 'system'),
+        title: String(item.title || 'Notification'),
+        message: String(item.message || ''),
+        createdAt: String(item.createdAt || new Date().toISOString()),
+        timeLabel: String(item.timeLabel || 'just now'),
+        unread: Boolean(item.unread) || false,
+        actionUrl: item.actionUrl ? String(item.actionUrl) : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalNotifications(items: UiNotification[]) {
+  try {
+    localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(items.slice(0, 100)));
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+function pushLocalNotification(notification: UiNotification) {
+  const existing = loadLocalNotifications();
+  const merged = [notification, ...existing.filter((item) => item.id !== notification.id)].slice(0, 100);
+  saveLocalNotifications(merged);
+  window.dispatchEvent(new CustomEvent('local-notification', {detail: notification}));
+}
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -91,8 +132,24 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
   const [notifications, setNotifications] = React.useState<UiNotification[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState('');
+  const [authRequired, setAuthRequired] = React.useState(false);
   const [isMarkingAll, setIsMarkingAll] = React.useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    const onLocalNotification = (event: Event) => {
+      const customEvent = event as CustomEvent<UiNotification>;
+      if (!customEvent?.detail?.id) return;
+      setNotifications((prev) => [customEvent.detail, ...prev.filter((item) => item.id !== customEvent.detail.id)]);
+      const existing = loadLocalNotifications();
+      saveLocalNotifications([customEvent.detail, ...existing.filter((item) => item.id !== customEvent.detail.id)]);
+    };
+
+    window.addEventListener('local-notification', onLocalNotification as EventListener);
+    return () => {
+      window.removeEventListener('local-notification', onLocalNotification as EventListener);
+    };
+  }, []);
 
   const extractList = (payload: any): any[] => {
     if (Array.isArray(payload?.data)) return payload.data;
@@ -111,6 +168,18 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
   const loadNotifications = React.useCallback(async () => {
     setIsLoading(true);
     setError('');
+    setAuthRequired(false);
+
+    const token = authService.getToken();
+    if (!token) {
+      const local = loadLocalNotifications();
+      setError('Please log in to view notifications.');
+      setAuthRequired(true);
+      setNotifications(local);
+      setLastUpdatedAt(local.length > 0 ? Date.now() : null);
+      setIsLoading(false);
+      return;
+    }
     try {
       const perPage = 50;
       const all: UiNotification[] = [];
@@ -132,17 +201,24 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       // Deduplicate (some backends return overlapping pages or aliases).
       const byId = new Map<string, UiNotification>();
       for (const item of all) byId.set(item.id, item);
-      setNotifications(Array.from(byId.values()));
+      const backendNotifications = Array.from(byId.values());
+      const localNotifications = loadLocalNotifications();
+
+      // Local notifications should show first and not clobber server items with same id.
+      const merged = [...localNotifications, ...backendNotifications.filter((n) => !localNotifications.some((l) => l.id === n.id))];
+      setNotifications(merged);
       setLastUpdatedAt(Date.now());
     } catch (e: any) {
       const status = Number(e?.status);
-      if (status === 401) {
-        setError('Please log in to view notifications.');
+      if (status === 401 || status === 403) {
+        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
+        setAuthRequired(true);
       } else {
         setError(e?.data?.message || e?.message || 'Unable to load notifications.');
       }
-      setNotifications([]);
-      setLastUpdatedAt(null);
+      const local = loadLocalNotifications();
+      setNotifications(local);
+      setLastUpdatedAt(local.length > 0 ? Date.now() : null);
     } finally {
       setIsLoading(false);
     }
@@ -168,31 +244,83 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
   const markAllRead = async () => {
     if (isMarkingAll) return;
     setIsMarkingAll(true);
+
+    const localNotifs = loadLocalNotifications();
+    if (localNotifs.length > 0) {
+      const updatedLocal = localNotifs.map((n) => ({...n, unread: false}));
+      saveLocalNotifications(updatedLocal);
+      setNotifications((prev) => prev.map((n) => (n.id.startsWith('local-') ? {...n, unread: false} : n)));
+    }
+
     try {
       await notificationService.markAllRead();
       await loadNotifications();
     } catch (e: any) {
-      setError(e?.data?.message || e?.message || 'Unable to mark all as read.');
+      const status = Number(e?.status);
+      if (status === 401 || status === 403) {
+        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
+        setAuthRequired(true);
+        setNotifications([]);
+        setLastUpdatedAt(null);
+      } else {
+        setError(e?.data?.message || e?.message || 'Unable to mark all as read.');
+      }
     } finally {
       setIsMarkingAll(false);
     }
   };
 
   const markRead = async (id: string) => {
+    if (id.startsWith('local-')) {
+      setNotifications((prev) => {
+        const next = prev.map((n) => (n.id === id ? {...n, unread: false} : n));
+        const local = next.filter((n) => n.id.startsWith('local-'));
+        saveLocalNotifications(local);
+        return next;
+      });
+      return;
+    }
+
     try {
       await notificationService.markRead(id);
       setNotifications((prev) => prev.map((n) => (n.id === id ? {...n, unread: false} : n)));
     } catch (e: any) {
-      setError(e?.data?.message || e?.message || 'Unable to mark as read.');
+      const status = Number(e?.status);
+      if (status === 401 || status === 403) {
+        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
+        setAuthRequired(true);
+        setNotifications([]);
+        setLastUpdatedAt(null);
+      } else {
+        setError(e?.data?.message || e?.message || 'Unable to mark as read.');
+      }
     }
   };
 
   const remove = async (id: string) => {
+    if (id.startsWith('local-')) {
+      setNotifications((prev) => {
+        const next = prev.filter((n) => n.id !== id);
+        const local = next.filter((n) => n.id.startsWith('local-'));
+        saveLocalNotifications(local);
+        return next;
+      });
+      return;
+    }
+
     try {
       await notificationService.remove(id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     } catch (e: any) {
-      setError(e?.data?.message || e?.message || 'Unable to delete notification.');
+      const status = Number(e?.status);
+      if (status === 401 || status === 403) {
+        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
+        setAuthRequired(true);
+        setNotifications([]);
+        setLastUpdatedAt(null);
+      } else {
+        setError(e?.data?.message || e?.message || 'Unable to delete notification.');
+      }
     }
   };
 
@@ -221,7 +349,18 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
 
       {error ? (
         <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>{error}</span>
+            {authRequired ? (
+              <button
+                type="button"
+                onClick={() => onNavigate('home', {authOverlay: 'login'})}
+                className="w-fit rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary/90 transition-all"
+              >
+                Log in
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -232,7 +371,7 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
           </div>
         ) : null}
 
-        {!isLoading && notifications.length === 0 ? (
+        {!isLoading && !error && notifications.length === 0 ? (
           <div className="rounded-3xl border border-border bg-surface p-10 text-center space-y-2">
             <p className="text-text font-bold">No notifications yet</p>
             <p className="text-sm text-text-muted">You will see updates here when something happens.</p>

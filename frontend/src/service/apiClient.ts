@@ -13,14 +13,18 @@ export class ApiClientError extends Error {
   url?: string;
 }
 
+const PRODUCTION_HOSTNAME = 'elibrary.pncproject.site';
+const PRODUCTION_BASE_URL = `https://${PRODUCTION_HOSTNAME}`;
+const VITE_ENV = (import.meta as any)?.env || {};
+const HAS_EXPLICIT_API_BASE_URL =
+  VITE_ENV?.VITE_API_URL !== undefined || VITE_ENV?.VITE_API_BASE_URL !== undefined;
+
 function defaultBaseUrl(): string {
   const viteEnv = (import.meta as any)?.env;
   if (viteEnv?.DEV) {
     // In dev, prefer same-origin + Vite proxy to avoid CORS failures.
     return '';
   }
-  const productionHostname = 'elibrary.pncproject.site';
-  const productionBaseUrl = `https://${productionHostname}`;
 
   if (typeof globalThis !== 'undefined' && globalThis.location) {
     const protocol = String(globalThis.location.protocol || 'https:');
@@ -37,18 +41,18 @@ function defaultBaseUrl(): string {
     if ((import.meta as any)?.env?.DEV && isIpv4) return origin;
 
     if (hostname) {
-      if (hostname === productionHostname) return productionBaseUrl;
+      if (hostname === PRODUCTION_HOSTNAME) return PRODUCTION_BASE_URL;
 
       // If the frontend is hosted on a raw IP in production, it's usually a static host without `/api` routes.
       // Default to the known backend domain instead of calling the same IP (which would 404).
-      if (!(import.meta as any)?.env?.DEV && isIpv4) return productionBaseUrl;
+      if (!(import.meta as any)?.env?.DEV && isIpv4) return PRODUCTION_BASE_URL;
 
       if (port && port !== '80' && port !== '443') return origin;
       return `${safeProtocol}//${hostname}`;
     }
   }
 
-  return productionBaseUrl;
+  return PRODUCTION_BASE_URL;
 }
 
 const API_BASE_URL = String(
@@ -62,6 +66,30 @@ function buildUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) return path;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return `${API_BASE_URL}${normalizedPath}`;
+}
+
+function buildProductionUrl(path: string): string {
+  if (!path) return PRODUCTION_BASE_URL;
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${PRODUCTION_BASE_URL}${normalizedPath}`;
+}
+
+function shouldFallbackToProduction(path: string, url: string): boolean {
+  const viteEnv = (import.meta as any)?.env;
+  if (viteEnv?.DEV) return false;
+  if (HAS_EXPLICIT_API_BASE_URL) return false;
+  if (!path || /^https?:\/\//i.test(path)) return false;
+
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  if (!/^\/(api|storage)(\/|$)/i.test(normalizedPath)) return false;
+
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname !== PRODUCTION_HOSTNAME;
+  } catch {
+    return true;
+  }
 }
 
 async function parseResponse(response: Response): Promise<unknown> {
@@ -112,6 +140,8 @@ function isBlob(value: unknown): value is Blob {
 
 async function request(method: ApiMethod, path: string, options: ApiClientOptions = {}) {
   const url = buildUrl(path);
+  const shouldFallback = shouldFallbackToProduction(path, url);
+  const fallbackUrl = shouldFallback ? buildProductionUrl(path) : '';
   const token = readToken();
   const {headers: optionHeaders, timeoutMs = 20000, body, signal, auth = true, ...restOptions} = options || {};
 
@@ -171,24 +201,86 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
         ...restOptions,
       });
     } catch (fetchError: any) {
-      const isAbortError =
-        fetchError?.name === 'AbortError' || /aborted|aborterror|signal is aborted/i.test(String(fetchError?.message || ''));
-      const error = new ApiClientError(
-        didTimeout
-          ? `Request timed out after ${Math.max(0, Number(timeoutMs) || 0)}ms`
-          : isAbortError
-            ? `Request was aborted (${method} ${url})`
-            : fetchError?.message ||
-              `Failed to fetch (${method} ${url}). Check VITE_API_URL/VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
-      );
-      if (didTimeout) error.status = 408;
-      error.data = fetchError;
-      error.method = method;
-      error.url = url;
-      throw error;
+      if (shouldFallback) {
+        try {
+          response = await fetch(fallbackUrl, {
+            method,
+            headers,
+            ...(hasBody
+              ? {
+                  body: isBinaryBody
+                    ? (body as any)
+                    : shouldJsonStringifyBody
+                      ? JSON.stringify(body)
+                      : (body as any),
+                }
+              : {}),
+            signal: combinedSignal,
+            ...restOptions,
+          });
+        } catch {
+          // fall through to the default error handler below
+          const isAbortError =
+            fetchError?.name === 'AbortError' ||
+            /aborted|aborterror|signal is aborted/i.test(String(fetchError?.message || ''));
+          const error = new ApiClientError(
+            didTimeout
+              ? `Request timed out after ${Math.max(0, Number(timeoutMs) || 0)}ms`
+              : isAbortError
+                ? `Request was aborted (${method} ${url})`
+                : fetchError?.message ||
+                  `Failed to fetch (${method} ${url}). Check VITE_API_URL/VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
+          );
+          if (didTimeout) error.status = 408;
+          error.data = fetchError;
+          error.method = method;
+          error.url = url;
+          throw error;
+        }
+      } else {
+        const isAbortError =
+          fetchError?.name === 'AbortError' || /aborted|aborterror|signal is aborted/i.test(String(fetchError?.message || ''));
+        const error = new ApiClientError(
+          didTimeout
+            ? `Request timed out after ${Math.max(0, Number(timeoutMs) || 0)}ms`
+            : isAbortError
+              ? `Request was aborted (${method} ${url})`
+              : fetchError?.message ||
+                `Failed to fetch (${method} ${url}). Check VITE_API_URL/VITE_API_BASE_URL, backend availability, and CORS/proxy settings.`,
+        );
+        if (didTimeout) error.status = 408;
+        error.data = fetchError;
+        error.method = method;
+        error.url = url;
+        throw error;
+      }
     }
 
-    const data = await parseResponse(response);
+    let data = await parseResponse(response);
+
+    if (!response.ok && shouldFallback && response.url !== fallbackUrl && response.status === 404) {
+      try {
+        const retryResponse = await fetch(fallbackUrl, {
+          method,
+          headers,
+          ...(hasBody
+            ? {
+                body: isBinaryBody
+                  ? (body as any)
+                  : shouldJsonStringifyBody
+                    ? JSON.stringify(body)
+                    : (body as any),
+              }
+            : {}),
+          signal: combinedSignal,
+          ...restOptions,
+        });
+        response = retryResponse;
+        data = await parseResponse(response);
+      } catch {
+        // ignore retry errors and continue handling the original response
+      }
+    }
 
     // Some backends (including common Laravel conventions) return HTTP 200 with `{ success: false, ... }`.
     // Treat it as an error so callers can map validation messages consistently.
@@ -208,7 +300,7 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
       error.status = response.status;
       error.data = data;
       error.method = method;
-      error.url = url;
+      error.url = response.url || url;
       throw error;
     }
 

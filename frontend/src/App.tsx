@@ -3,11 +3,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Icons, BookType, hydrateBooksFromApi } from './types';
 import {useLibrary} from './context/LibraryContext';
 import {useUnsavedChanges} from './context/UnsavedChangesContext';
-import defaultAvatarUrl from './utils/defaultAvatar';
+import defaultAvatarUrl from './test/defaultAvatar';
 import {useI18n} from './i18n/I18nProvider';
 
 // Page Components
 import Home from './pages/Home';
+import Authors from './pages/Authors';
 import Categories from './pages/Categories';
 import Favorites from './pages/Favorites';
 import Downloads from './pages/Downloads';
@@ -31,6 +32,7 @@ import {
 
 type Page =
   | 'home'
+  | 'authors'
   | 'plans'
   | 'categories'
   | 'favorites'
@@ -133,6 +135,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   const pageToPath = React.useCallback((page: Page) => {
     if (page === 'home') return '/';
+    if (page === 'authors') return '/authors';
     if (page === 'plans') return '/plans';
     if (page === 'categories') return '/categories';
     if (page === 'favorites') return '/favorites';
@@ -147,6 +150,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const pathToPage = React.useCallback((path: string): Page | null => {
     const normalized = String(path || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
     if (!normalized || normalized === 'home') return 'home';
+    if (normalized === 'authors') return 'authors';
     if (normalized === 'plans') return 'plans';
     if (normalized === 'categories') return 'categories';
     if (normalized === 'favorites') return 'favorites';
@@ -511,6 +515,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
         );
       case 'plans':
         return <Plans onNavigate={navigateTo} isGuest={isGuestUser} membershipTier={membershipTier} />;
+      case 'authors': return <Authors onNavigate={navigateTo} />;
       case 'categories': return <Categories onNavigate={navigateTo} />;
       case 'favorites': return <Favorites onNavigate={navigateTo} />;
       case 'downloads': return <Downloads onNavigate={navigateTo} />;
@@ -541,26 +546,27 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     <div className="min-h-screen flex flex-col bg-bg text-text overflow-x-hidden">
       {/* Navigation Bar */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-bg/80 backdrop-blur-md px-4 sm:px-6 lg:px-12 py-3">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-5">
-          <div className="flex items-center gap-6">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 lg:gap-4">
+          <div className="flex min-w-0 items-center gap-4 lg:gap-6">
             <div 
-              className="elibrary-logo flex items-center gap-2 text-primary cursor-pointer"
+              className="elibrary-logo shrink-0 flex items-center gap-2 text-primary cursor-pointer"
               onClick={() => navigateTo('home')}
             >
               <Icons.BookOpen className="size-8" />
               <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">គម្ពី-ELibrary</h2>
             </div>
-            <nav className="hidden lg:flex items-center gap-6">
+            <nav className="hidden xl:flex items-center gap-5">
               <NavLink active={currentPage === 'home'} onClick={() => navigateTo('home')}>Home</NavLink>
+              <NavLink active={currentPage === 'authors'} onClick={() => navigateTo('authors')}>Author</NavLink>
               <NavLink active={currentPage === 'categories'} onClick={() => navigateTo('categories')}>Categories</NavLink>
               <NavLink active={currentPage === 'favorites'} onClick={() => navigateTo('favorites')}>Favorites</NavLink>
               <NavLink active={currentPage === 'downloads'} onClick={() => navigateTo('downloads')}>Downloads</NavLink>
             </nav>
           </div>
-            <div className="flex flex-1 justify-end items-center gap-4">
+            <div className="flex min-w-0 flex-1 justify-end items-center gap-2 lg:gap-3">
               <div
                 ref={searchContainerRef}
-                className="relative hidden md:flex w-[min(460px,38vw)]"
+                className="relative hidden lg:flex flex-1 min-w-[220px] max-w-[440px]"
               >
                 <div
                   className={`w-full rounded-2xl border bg-bg/70 px-4 py-2 backdrop-blur-xl transition-all shadow-sm ${
@@ -619,7 +625,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                           <Icons.X className="size-4" />
                         </button>
                       ) : (
-                        <span className="hidden lg:inline-flex items-center gap-1 rounded-xl border border-border/60 bg-surface/60 px-2 py-1 text-[10px] font-bold text-text-muted/80">
+                        <span className="hidden xl:inline-flex items-center gap-1 rounded-xl border border-border/60 bg-surface/60 px-2 py-1 text-[10px] font-bold text-text-muted/80">
                           <span>/</span>
                           <span className="font-semibold">Search</span>
                         </span>
@@ -677,7 +683,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 )}
               </div>
               
-              <div className="relative">
+              <div className="relative shrink-0">
                 <button 
                   onClick={() => setIsLightMode(!isLightMode)}
                   className="p-2 rounded-lg bg-surface border border-border hover:bg-white/10 transition-all flex items-center justify-center"
@@ -691,7 +697,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 </button>
               </div>
 
-              <div className="relative">
+              <div className="relative shrink-0">
                 <button 
                   onClick={() => navigateTo('notifications')}
                   className="relative p-2 rounded-lg bg-surface border border-border hover:bg-white/10 transition-all"
@@ -701,14 +707,14 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 </button>
               </div>
 
-              <div className="flex items-center gap-3 border-l border-primary/10 pl-4">
-              <div className="text-right hidden sm:block">
+              <div className="flex shrink-0 items-center gap-2 lg:gap-3 border-l border-primary/10 pl-3 lg:pl-4">
+              <div className="text-right hidden 2xl:block">
                 <p className="text-xs font-bold text-text max-w-[140px] truncate">{user.name}</p>
-                <p className="text-primary text-[10px] font-bold uppercase hidden md:block">{user.membership}</p>
+                <p className="text-primary text-[10px] font-bold uppercase hidden 2xl:block">{user.membership}</p>
               </div>
               <button
                 type="button"
-                className="size-10 rounded-full bg-primary/20 border-2 border-primary/20 cursor-pointer overflow-hidden"
+                className="size-9 lg:size-10 rounded-full bg-primary/20 border-2 border-primary/20 cursor-pointer overflow-hidden"
                 aria-label="Open profile"
                 onClick={() => {
                   if (isGuestUser) {
@@ -721,16 +727,16 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                 <AvatarImage src={user.photo} alt={`${user.name} avatar`} className="h-full w-full object-cover" />
               </button>
               {isGuestUser ? (
-                <div className="flex items-center gap-2 pr-2">
+                <div className="flex items-center gap-1.5 pr-1 lg:pr-2">
                   <button
                     onClick={() => handleAuthRedirect('login')}
-                    className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
+                    className="whitespace-nowrap rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
                   >
                     Login
                   </button>
                   <button
                     onClick={() => handleAuthRedirect('register')}
-                    className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-white hover:bg-primary/90 transition-colors"
+                    className="whitespace-nowrap rounded-lg bg-primary px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-primary/90 transition-colors"
                   >
                     Register
                   </button>
@@ -738,7 +744,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
               ) : (
                 <button
                   onClick={() => navigateTo('logout')}
-                  className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
+                  className="whitespace-nowrap rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted hover:text-primary transition-colors"
                 >
                   Logout
                 </button>
@@ -821,6 +827,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       {/* Mobile Bottom Nav */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-bg border-t border-border px-6 py-3 flex justify-around z-50 backdrop-blur-md bg-bg/90">
         <MobileNavLink active={currentPage === 'home'} onClick={() => navigateTo('home')} icon={<Icons.Home className="size-5" />} label="Home" />
+        <MobileNavLink active={currentPage === 'authors'} onClick={() => navigateTo('authors')} icon={<Icons.User className="size-5" />} label="Author" />
         <MobileNavLink active={currentPage === 'categories'} onClick={() => navigateTo('categories')} icon={<Icons.LayoutDashboard className="size-5" />} label="Categories" />
         <MobileNavLink active={currentPage === 'downloads'} onClick={() => navigateTo('downloads')} icon={<Icons.Download className="size-5" />} label="Downloads" />
         <MobileNavLink active={currentPage === 'favorites'} onClick={() => navigateTo('favorites')} icon={<Icons.Heart className="size-5" />} label="Favorites" />

@@ -22,6 +22,16 @@ VITE_API_PROXY_TARGET="http://localhost:8000"
 
 The Home page (`frontend/src/pages/Home.tsx`) renders books from `LibraryProvider` (`frontend/src/context/LibraryContext.tsx`), which calls `bookService.list()` (`frontend/src/service/bookService.ts`).
 
+### Authors page contract
+
+For the new Authors page (`frontend/src/pages/Authors.tsx`), backend endpoint guide is documented here:
+
+- `frontend/docs/authors-api.md`
+
+Main endpoint:
+
+- `GET /api/authors` (supports `q`, `page`, `per_page`)
+
 ### What Home needs
 
 Home uses a single list of **approved** books and derives sections from it:
