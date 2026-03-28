@@ -628,9 +628,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-12">
       {/* Breadcrumbs */}
       <nav className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted">
-        <button onClick={() => onNavigate('home')} className="hover:text-primary transition-colors">Home</button>
+        <button type="button" onClick={() => onNavigate('home')} className="hover:text-primary transition-colors">Home</button>
         <Icons.ChevronRight className="size-3" />
-        <button onClick={() => onNavigate('categories')} className="hover:text-primary transition-colors">{currentBook.category}</button>
+        <button type="button" onClick={() => onNavigate('categories')} className="hover:text-primary transition-colors">{currentBook.category}</button>
         <Icons.ChevronRight className="size-3" />
         <span className="text-text">{currentBook.title}</span>
       </nav>
@@ -643,7 +643,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <button
+            <button type="button"
               onClick={() => {
                 if (downloaded) {
                   if (shouldRequireAuthForRead()) {
@@ -669,7 +669,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               <Icons.BookOpen className="size-4" />
               {downloaded ? 'Read Offline' : 'Read Now'}
             </button>
-            <button
+            <button type="button"
               onClick={() => {
                 if (downloaded) {
                   if (shouldRequireAuthForRead()) {
@@ -708,7 +708,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             </button>
           </div>
           <button
-            onClick={() => {
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
               void toggle(currentBook);
             }}
             className={`w-full border py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${favorite ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-500/90' : 'bg-surface text-text border-border hover:bg-white/10'}`}
@@ -743,7 +745,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                   <p className="text-sm font-bold text-text group-hover/author:text-primary transition-colors">{currentBook.author}</p>
                 </div>
               </div>
-              <button className="px-4 py-1.5 rounded-lg border border-primary/30 text-primary text-[11px] font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all">
+              <button type="button" className="px-4 py-1.5 rounded-lg border border-primary/30 text-primary text-[11px] font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all">
                 Follow
               </button>
               <div className="h-8 w-px bg-border" />
@@ -786,7 +788,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <p className="text-text-muted leading-relaxed">
               {currentBook.description || "In this groundbreaking work, the author explores the fundamental principles that govern our understanding of the world. Through a series of compelling narratives and rigorous analysis, the book challenges conventional wisdom and offers a fresh perspective on the challenges we face in the 21st century."}
             </p>
-            <button className="text-sm font-bold text-primary hover:underline">Read More</button>
+            <button type="button" className="text-sm font-bold text-primary hover:underline">Read More</button>
           </div>
 
           <div className="space-y-5 rounded-3xl border border-border bg-surface p-6">
@@ -894,7 +896,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     className="w-full bg-surface border border-border rounded-2xl p-4 text-sm text-text placeholder:text-text-muted focus:ring-primary focus:border-primary outline-none min-h-[100px] resize-none transition-all"
                   />
                   <div className="flex justify-end">
-                    <button 
+                    <button type="button" 
                       onClick={() => void handlePostComment()}
                       disabled={!commentText.trim() || isSubmittingComment}
                       className="bg-primary text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-primary/90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
@@ -939,7 +941,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       {(comment.canEdit ||
                         comment.user.trim().toLowerCase() === currentProfile.name.trim().toLowerCase()) &&
                         editingCommentId !== comment.id && (
-                        <button 
+                        <button type="button" 
                           onClick={() => handleEditStart(comment)}
                           className="text-[10px] font-bold text-primary uppercase tracking-widest hover:underline"
                         >
@@ -960,13 +962,13 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                         className="w-full bg-surface border border-primary/30 rounded-xl p-3 text-sm text-text focus:ring-primary focus:border-primary outline-none min-h-[80px] resize-none"
                       />
                       <div className="flex justify-end gap-2">
-                        <button 
+                        <button type="button" 
                           onClick={handleEditCancel}
                           className="px-4 py-1.5 rounded-lg text-[10px] font-bold text-text-muted hover:text-text transition-colors uppercase tracking-widest"
                         >
                           Cancel
                         </button>
-                        <button 
+                        <button type="button" 
                           onClick={() => handleEditSave(comment.id)}
                           className="bg-primary text-white px-4 py-1.5 rounded-lg font-bold text-[10px] hover:bg-primary/90 transition-all uppercase tracking-widest"
                         >
@@ -980,11 +982,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     </p>
                   )}
                   <div className="flex items-center gap-4">
-                    <button className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-primary transition-colors">
+                    <button type="button" className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-primary transition-colors">
                       <Icons.Heart className="size-3" />
                       {comment.likes} Likes
                     </button>
-                    <button className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-primary transition-colors">
+                    <button type="button" className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-primary transition-colors">
                       <Icons.MessageSquare className="size-3" />
                       {comment.replies} Replies
                     </button>
@@ -1042,3 +1044,4 @@ function BookStat({ label, value }: { label: string, value: string }) {
     </div>
   );
 }
+

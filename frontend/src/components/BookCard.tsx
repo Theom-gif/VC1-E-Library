@@ -29,8 +29,10 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
         <CoverImage src={book.cover} alt={book.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
           <button 
+            type="button"
             className="p-2 rounded-full bg-primary text-white shadow-lg hover:scale-110 transition-transform"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               if (downloaded) {
                 void openOffline(String(book.id)).catch((err: any) => {
@@ -49,8 +51,10 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
             <Icons.Download className="size-4" />
           </button>
           <button 
+            type="button"
             className={`p-2 rounded-full shadow-lg hover:scale-110 transition-transform ${favorite ? 'bg-rose-500 text-white' : 'bg-white text-background-dark'}`}
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               void toggle(book);
             }}
