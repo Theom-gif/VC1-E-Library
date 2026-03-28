@@ -158,6 +158,10 @@ The current UI navigates using the **author name** string (`frontend/src/pages/A
 }
 ```
 
+### Follow author (optional)
+
+See `frontend/docs/follow-author-api.md` for recommended endpoints and payloads.
+
 ## Favorites
 
 The Favorites page is currently mock-only, but the UI has a clear path to an API.
@@ -216,8 +220,20 @@ The Downloads page is currently mock-only; if you want server-side tracking:
 
 ## Notifications
 
+See `frontend/docs/NOTIFICATIONS_API.md` for recommended payloads, response shapes, and role-specific routes.
+
 ### Endpoints
 
+- Preferred:
+  - `GET /api/user/notifications`
+  - `POST /api/user/notifications/{id}/read`
+  - `GET /api/author/notifications`
+  - `GET /api/admin/notifications`
+  - `POST /api/admin/notifications/send`
+- Reading-session hooks (can generate notifications):
+  - `POST /api/reading/start`
+  - `POST /api/reading/finish`
+- Legacy aliases (optional):
 - `GET /api/notifications`
   - Response: `{ "data": [Notification] }`
 - `POST /api/notifications/read-all`
@@ -232,6 +248,47 @@ The Downloads page is currently mock-only; if you want server-side tracking:
   - Body: `{ "name": "...", "photo": "https://..." }` (extend as needed)
 - `PATCH /api/me/settings`
   - Body: `{ "automatic_downloads": true, "reading_reminders": true, "public_profile": false, "theme": "dark" }`
+
+## Achievements / Reading Logs
+
+The Profile UI has an Achievements section and the frontend includes an `achievementService` that calls these endpoints.
+
+### Endpoints
+
+- `GET /api/achievements`
+  - Returns the list of achievement definitions.
+- `GET /api/users/{user}/achievements`
+  - Returns the achievements for the given user (definitions + `unlocked`, optional `progress`, optional `unlocked_at`).
+- `POST /api/reading-logs`
+  - Creates a reading log entry.
+  - Uses the authenticated user by default.
+  - Only admins can create reading logs for another user via `user_id`.
+- `POST /api/users/{user}/check-achievements`
+  - Re-evaluates achievements for the given user and returns the updated list.
+
+### Data notes (used by the frontend)
+
+- `SPEED/Fast`: based on `reading_progress.total_seconds`; interpret the achievement `threshold` as **minutes**.
+- `REVIEW/Critic`: based on the user's review count (works with an existing `reviews` table).
+
+### Recommended achievement payload
+
+```json
+{
+  "data": [
+    {
+      "key": "streak",
+      "label": "Streak",
+      "description": "Read on consecutive days.",
+      "threshold": 7,
+      "unit": "days",
+      "unlocked": false,
+      "progress": 3,
+      "unlocked_at": null
+    }
+  ]
+}
+```
 
 ## Search
 
@@ -248,3 +305,4 @@ If you want the frontend to start replacing mocks with real data quickly, implem
 1. Auth: `POST /api/auth/login`, `POST /api/auth/user_registration`
 2. Books: `GET /api/books`, `GET /api/books/{id}`
 3. Categories: `GET /api/categories`
+

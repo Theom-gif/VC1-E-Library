@@ -2,7 +2,10 @@
   "name": "e_library_webiste",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix frontend run dev",
+    "dev:backend": "node scripts/mock-backend.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "npm run dev:all",
     "build": "npm --prefix frontend run build",
     "build:deploy": "npm --prefix frontend run build && node scripts/prepare-deploy.mjs",
     "lint": "npm --prefix frontend run lint",
