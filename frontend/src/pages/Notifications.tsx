@@ -132,7 +132,6 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
   const [notifications, setNotifications] = React.useState<UiNotification[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState('');
-  const [authRequired, setAuthRequired] = React.useState(false);
   const [isMarkingAll, setIsMarkingAll] = React.useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState<number | null>(null);
 
@@ -168,13 +167,10 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
   const loadNotifications = React.useCallback(async () => {
     setIsLoading(true);
     setError('');
-    setAuthRequired(false);
 
     const token = authService.getToken();
     if (!token) {
       const local = loadLocalNotifications();
-      setError('Please log in to view notifications.');
-      setAuthRequired(true);
       setNotifications(local);
       setLastUpdatedAt(local.length > 0 ? Date.now() : null);
       setIsLoading(false);
@@ -211,8 +207,7 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
     } catch (e: any) {
       const status = Number(e?.status);
       if (status === 401 || status === 403) {
-        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
-        setAuthRequired(true);
+        setError('');
       } else {
         setError(e?.data?.message || e?.message || 'Unable to load notifications.');
       }
@@ -252,16 +247,18 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       setNotifications((prev) => prev.map((n) => (n.id.startsWith('local-') ? {...n, unread: false} : n)));
     }
 
+    if (!authService.getToken()) {
+      setIsMarkingAll(false);
+      return;
+    }
+
     try {
       await notificationService.markAllRead();
       await loadNotifications();
     } catch (e: any) {
       const status = Number(e?.status);
       if (status === 401 || status === 403) {
-        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
-        setAuthRequired(true);
-        setNotifications([]);
-        setLastUpdatedAt(null);
+        setError('');
       } else {
         setError(e?.data?.message || e?.message || 'Unable to mark all as read.');
       }
@@ -281,16 +278,18 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       return;
     }
 
+    if (!authService.getToken()) {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? {...n, unread: false} : n)));
+      return;
+    }
+
     try {
       await notificationService.markRead(id);
       setNotifications((prev) => prev.map((n) => (n.id === id ? {...n, unread: false} : n)));
     } catch (e: any) {
       const status = Number(e?.status);
       if (status === 401 || status === 403) {
-        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
-        setAuthRequired(true);
-        setNotifications([]);
-        setLastUpdatedAt(null);
+        setError('');
       } else {
         setError(e?.data?.message || e?.message || 'Unable to mark as read.');
       }
@@ -308,16 +307,22 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       return;
     }
 
+    if (!authService.getToken()) {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      return;
+    }
+
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+
     try {
       await notificationService.remove(id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
     } catch (e: any) {
       const status = Number(e?.status);
       if (status === 401 || status === 403) {
-        setError(authService.getToken() ? 'Your session expired. Please log in again.' : 'Please log in to view notifications.');
-        setAuthRequired(true);
-        setNotifications([]);
-        setLastUpdatedAt(null);
+        setError('');
+      } else if (status === 404 || status === 405) {
+        // Some backends don't expose delete route yet; keep local UI deletion.
+        setError('');
       } else {
         setError(e?.data?.message || e?.message || 'Unable to delete notification.');
       }
@@ -349,18 +354,7 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
 
       {error ? (
         <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <span>{error}</span>
-            {authRequired ? (
-              <button
-                type="button"
-                onClick={() => onNavigate('home', {authOverlay: 'login'})}
-                className="w-fit rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white hover:bg-primary/90 transition-all"
-              >
-                Log in
-              </button>
-            ) : null}
-          </div>
+          <span>{error}</span>
         </div>
       ) : null}
 
@@ -402,12 +396,6 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
                   <span className="text-xs text-text-muted font-bold font-mono whitespace-nowrap">{n.timeLabel}</span>
                 </div>
                 <div className="flex items-center gap-4 pt-2">
-                  <button
-                    onClick={() => void markRead(n.id)}
-                    className="text-xs font-bold text-primary hover:underline uppercase tracking-widest"
-                  >
-                    View Details
-                  </button>
                   <button
                     onClick={() => void remove(n.id)}
                     className="text-xs font-bold text-text-muted hover:text-red-500 transition-colors uppercase tracking-widest"

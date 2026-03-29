@@ -23,6 +23,8 @@ import Plans from './pages/Plans';
 import CoverImage from './components/CoverImage';
 import AvatarImage from './components/AvatarImage';
 import profileService from './service/profileService';
+import notificationService from './service/notificationService';
+import authService from './service/authService';
 import {
   AUTH_REQUIRED_EVENT,
   getMembershipTier,
@@ -44,6 +46,8 @@ type Page =
   | 'author-details'
   | 'notifications'
   | 'logout';
+
+type SelectedAuthor = {id?: string; name?: string} | string | null;
 
 type AuthenticatedUser = {
   id: string;
@@ -68,6 +72,8 @@ type AppProps = {
 };
 
 const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
+const THEME_MODE_KEY = 'elibrary_theme_mode';
+const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
 const DEFAULT_PROFILE_PHOTO = defaultAvatarUrl;
 
 function readProfileCache(): Partial<{name: string; photo: string; memberSince: string}> {
@@ -97,6 +103,95 @@ function clearProfileCache() {
   }
 }
 
+type BadgeNotificationItem = {
+  id: string;
+  unread: boolean;
+};
+
+function normalizeUnread(raw: any): boolean {
+  const readAt = String(raw?.read_at ?? raw?.readAt ?? '').trim();
+  const unreadRaw = raw?.unread ?? raw?.is_unread ?? raw?.unread_flag;
+  if (typeof unreadRaw === 'boolean') return unreadRaw;
+  if (typeof unreadRaw === 'number') return unreadRaw === 1;
+  if (typeof unreadRaw === 'string') {
+    const token = unreadRaw.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'unread'].includes(token)) return true;
+    if (['0', 'false', 'no', 'read'].includes(token)) return false;
+  }
+  return !readAt;
+}
+
+function extractNotificationItems(payload: any): BadgeNotificationItem[] {
+  const list =
+    (Array.isArray(payload?.data?.data) && payload.data.data) ||
+    (Array.isArray(payload?.data?.items) && payload.data.items) ||
+    (Array.isArray(payload?.data) && payload.data) ||
+    (Array.isArray(payload?.notifications) && payload.notifications) ||
+    (Array.isArray(payload?.results) && payload.results) ||
+    (Array.isArray(payload?.items) && payload.items) ||
+    (Array.isArray(payload) && payload) ||
+    [];
+
+  return list
+    .map((item: any) => ({
+      id: String(item?.id ?? '').trim(),
+      unread: normalizeUnread(item),
+    }))
+    .filter((item: BadgeNotificationItem) => Boolean(item.id));
+}
+
+function extractNotificationMeta(payload: any): Record<string, any> {
+  if (payload?.meta && typeof payload.meta === 'object') return payload.meta;
+  if (payload?.data?.meta && typeof payload.data.meta === 'object') return payload.data.meta;
+  if (payload?.data?.pagination && typeof payload.data.pagination === 'object') return payload.data.pagination;
+  if (payload?.pagination && typeof payload.pagination === 'object') return payload.pagination;
+  return {};
+}
+
+function readLocalUnreadNotifications(): BadgeNotificationItem[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_NOTIFICATIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item: any) => ({
+        id: String(item?.id ?? '').trim(),
+        unread: Boolean(item?.unread),
+      }))
+      .filter((item: BadgeNotificationItem) => Boolean(item.id && item.unread));
+  } catch {
+    return [];
+  }
+}
+
+function readThemeMode(): 'light' | 'dark' {
+  try {
+    const raw = String(localStorage.getItem(THEME_MODE_KEY) || '').trim().toLowerCase();
+    if (raw === 'light' || raw === 'dark') return raw;
+  } catch {
+    // ignore storage issues
+  }
+
+  try {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+  } catch {
+    // ignore matchMedia issues
+  }
+
+  return 'light';
+}
+
+function writeThemeMode(mode: 'light' | 'dark') {
+  try {
+    localStorage.setItem(THEME_MODE_KEY, mode);
+  } catch {
+    // ignore storage issues
+  }
+}
+
 export default function App({ authUser, onLogout, onLogin, onRegister }: AppProps) {
   const {t} = useI18n();
   const {books, newArrivals} = useLibrary();
@@ -109,13 +204,14 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const [homeAuthMode, setHomeAuthMode] = useState<'login' | 'register'>('login');
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [selectedBook, setSelectedBook] = useState<BookType | null>(null);
-  const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
+  const [selectedAuthor, setSelectedAuthor] = useState<SelectedAuthor>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [isLightMode, setIsLightMode] = useState(true);
+  const [isLightMode, setIsLightMode] = useState(() => readThemeMode() === 'light');
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [, setBooksSyncVersion] = useState(0);
   const isGuestUser = authUser?.id === 'guest';
-  const guestRestrictedPages: Page[] = ['favorites', 'downloads', 'settings', 'profile', 'notifications'];
+  const guestRestrictedPages: Page[] = ['favorites', 'downloads', 'settings', 'profile'];
   const cachedProfile = readProfileCache();
   const [user, setUser] = useState({
     name: authUser?.id === 'guest' ? 'Guest User' : cachedProfile.name || authUser?.name || 'Library User',
@@ -166,7 +262,82 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   React.useEffect(() => {
     if (isLightMode) document.documentElement.classList.remove('dark');
     else document.documentElement.classList.add('dark');
+    writeThemeMode(isLightMode ? 'light' : 'dark');
   }, [isLightMode]);
+
+  React.useEffect(() => {
+    let alive = true;
+
+    const loadUnreadCount = async () => {
+      const localUnread = readLocalUnreadNotifications();
+      const localUnreadSet = new Set(localUnread.map((item) => item.id));
+      let nextCount = localUnreadSet.size;
+
+      const token = authService.getToken();
+      if (token) {
+        try {
+          const payload: any = await notificationService.list({page: 1, per_page: 50, unread: true});
+          const backendItems = extractNotificationItems(payload).filter((item) => item.unread);
+          const backendUnreadSet = new Set(backendItems.map((item) => item.id));
+
+          const meta = extractNotificationMeta(payload);
+          const totalFromMeta = Number(meta?.total ?? meta?.unread_total ?? meta?.unreadCount);
+          const currentPage = Number(meta?.current_page ?? meta?.currentPage ?? 1);
+          const lastPage = Number(meta?.last_page ?? meta?.lastPage ?? 1);
+          const perPage = Number(meta?.per_page ?? meta?.perPage ?? 0);
+
+          let backendCount = backendUnreadSet.size;
+          if (Number.isFinite(totalFromMeta) && totalFromMeta >= 0) {
+            backendCount = totalFromMeta;
+          } else if (
+            Number.isFinite(currentPage) &&
+            Number.isFinite(lastPage) &&
+            Number.isFinite(perPage) &&
+            currentPage === 1 &&
+            lastPage > 1 &&
+            perPage > 0
+          ) {
+            backendCount = Math.max(backendUnreadSet.size, (lastPage - 1) * perPage + backendUnreadSet.size);
+          }
+
+          const localOnlyUnread = localUnread.filter((item) => item.id.startsWith('local-')).length;
+          nextCount = Math.max(nextCount, backendCount + localOnlyUnread);
+        } catch {
+          // Keep local unread count if backend unread lookup fails.
+        }
+      }
+
+      if (alive) setUnreadNotificationCount(Math.max(0, Math.round(nextCount)));
+    };
+
+    const onLocalNotification = () => {
+      void loadUnreadCount();
+    };
+    const onFocus = () => {
+      void loadUnreadCount();
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== LOCAL_NOTIFICATIONS_KEY) return;
+      void loadUnreadCount();
+    };
+
+    void loadUnreadCount();
+    const intervalId = window.setInterval(() => {
+      void loadUnreadCount();
+    }, 30000);
+
+    window.addEventListener('local-notification', onLocalNotification as EventListener);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      alive = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('local-notification', onLocalNotification as EventListener);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [authUser?.id, currentPage]);
 
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -276,10 +447,10 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     setShowReauthPrompt(false);
     setShowHomeAuthOverlay(false);
     setPendingNav(null);
-    if (authUser?.role === 'user' && membershipTier !== 'reader') {
+    if (membershipTier !== 'reader') {
       setMembershipTier('reader');
     }
-  }, [authUser?.id, authUser?.role, isGuestUser, membershipTier]);
+  }, [authUser?.id, isGuestUser, membershipTier]);
 
   React.useEffect(() => {
     if (isGuestUser) return;
@@ -337,13 +508,6 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       navigateTo(next.page, next.data);
     }
   };
-
-  const notifications = [
-    { id: 1, type: 'new', title: 'New Arrival', message: 'Sea of Tranquility is now available!', time: '2m ago', unread: true, icon: <Icons.Book className="size-4" /> },
-    { id: 2, type: 'download', title: 'Download Complete', message: 'The Great Gatsby has been downloaded.', time: '1h ago', unread: false, icon: <Icons.Download className="size-4" /> },
-    { id: 3, type: 'goal', title: 'Reading Goal', message: 'You are 2 days away from your streak!', time: '5h ago', unread: false, icon: <Icons.Trophy className="size-4" /> },
-    { id: 4, type: 'system', title: 'System Update', message: 'New themes are now available in settings.', time: '1d ago', unread: false, icon: <Icons.Settings className="size-4" /> },
-  ];
 
   const navigateTo = (page: Page, data?: any) => {
     if (isGuestUser && guestRestrictedPages.includes(page)) {
@@ -525,7 +689,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       case 'profile': return <Profile user={user} onUpdateUser={setUser} onNavigate={navigateTo} />;
       case 'search': return <SearchPage query={searchQuery} results={filteredBooks} onNavigate={navigateTo} />;
       case 'book-details': return <BookDetails book={selectedBook || books[0]} onNavigate={navigateTo} />;
-      case 'author-details': return <AuthorDetails authorName={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
+      case 'author-details': return <AuthorDetails author={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
       case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
       case 'logout': return <Logout onLogout={handleLogout} onNavigate={navigateTo} />;
       default:
@@ -705,7 +869,11 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
                   className="relative p-2 rounded-lg bg-surface border border-border hover:bg-white/10 transition-all"
                 >
                   <Icons.Bell className="size-5 text-text-muted" />
-                  <span className="absolute top-1.5 right-1.5 size-2 bg-primary rounded-full border-2 border-bg" />
+                  {unreadNotificationCount > 0 ? (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[10px] leading-[18px] text-center font-bold border-2 border-bg">
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                    </span>
+                  ) : null}
                 </button>
               </div>
 

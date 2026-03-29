@@ -8,7 +8,12 @@ import ratingService, {type BookRatingsSummary} from '../service/ratingService';
 import reviewService from '../service/reviewService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
-import {PENDING_BOOK_RATING_KEY, requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
+import {
+  PENDING_BOOK_RATING_KEY,
+  requestAuth,
+  shouldRequireAuthForRead,
+  trackRead,
+} from '../utils/readerUpgrade';
 import authService from '../service/authService';
 import {API_BASE_URL} from '../service/apiClient';
 
@@ -31,6 +36,19 @@ interface Comment {
   canEdit?: boolean;
   canDelete?: boolean;
   likedByMe?: boolean;
+  replyItems?: CommentReply[];
+}
+
+interface CommentReply {
+  id: string;
+  userId?: string;
+  user: string;
+  avatar: string;
+  text: string;
+  time: string;
+  createdAt?: string;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 function normalizeBackendBookId(value: unknown): string {
@@ -82,6 +100,10 @@ function pickNumber(...values: unknown[]): number {
     if (Number.isFinite(n) && !Number.isNaN(n)) return n;
   }
   return 0;
+}
+
+function canUseProtectedFeatures(): boolean {
+  return Boolean(readToken());
 }
 
 const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
@@ -169,6 +191,48 @@ function formatRelativeTime(value: unknown, nowMs = Date.now()): string {
   return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
 }
 
+function normalizeCommentReply(raw: any, fallbackIndex: number): CommentReply {
+  const source = pickObject(raw);
+  const user = pickObject(source?.user);
+  const profile = readCurrentProfile();
+  const first = pickString(user?.firstname, source?.firstname, source?.first_name);
+  const last = pickString(user?.lastname, source?.lastname, source?.last_name);
+  const derivedName = pickString(`${first} ${last}`.trim());
+  const id = pickString(source?.id, source?.reply_id, source?.comment_id, `reply-local-${fallbackIndex + 1}`);
+  const userId = pickString(user?.id, user?.user_id, source?.user_id, source?.userId);
+  const avatarRaw = pickString(
+    user?.avatar,
+    user?.avatar_url,
+    user?.photo,
+    user?.photo_url,
+    user?.profile_photo_url,
+    user?.profile_photo,
+    user?.image,
+    source?.avatar,
+    source?.user_avatar,
+    source?.user_photo,
+    source?.user_image,
+  );
+  const createdAtRaw = pickString(source?.created_at, source?.createdAt, source?.timestamp, source?.time);
+  const derivedCreatedAt = parseRelativeAgoToIso(createdAtRaw);
+  const createdAt = derivedCreatedAt || createdAtRaw;
+  const displayName = pickString(user?.name, derivedName, source?.user_name, source?.username, profile.name, 'Library User');
+  const avatarFallback = displayName.trim().toLowerCase() === profile.name.trim().toLowerCase() ? profile.photo : '';
+  const avatar = asAbsoluteAssetUrl(avatarRaw) || asAbsoluteAssetUrl(avatarFallback) || 'https://picsum.photos/seed/user/100/100';
+
+  return {
+    id,
+    userId: userId || undefined,
+    user: displayName,
+    avatar,
+    text: pickString(source?.text, source?.content, source?.comment, source?.body, source?.message),
+    time: createdAt ? formatRelativeTime(createdAt) : pickString(source?.time) || '',
+    createdAt: createdAt && !Number.isNaN(new Date(createdAt).getTime()) ? new Date(createdAt).toISOString() : undefined,
+    canEdit: Boolean(source?.can_edit ?? source?.canEdit),
+    canDelete: Boolean(source?.can_delete ?? source?.canDelete),
+  };
+}
+
 function normalizeComment(raw: any, fallbackIndex: number): Comment {
   const source = pickObject(raw);
   const user = pickObject(source?.user);
@@ -198,6 +262,14 @@ function normalizeComment(raw: any, fallbackIndex: number): Comment {
   const displayName = pickString(user?.name, derivedName, source?.user_name, source?.username, profile.name, 'Library User');
   const avatarFallback = displayName.trim().toLowerCase() === profile.name.trim().toLowerCase() ? profile.photo : '';
   const avatar = asAbsoluteAssetUrl(avatarRaw) || asAbsoluteAssetUrl(avatarFallback) || 'https://picsum.photos/seed/user/100/100';
+  const nestedReplies = Array.isArray(source?.replies)
+    ? source.replies
+    : pickArray(source?.replies?.data, source?.replies_data, source?.children, source?.children?.data);
+  const replyItems = nestedReplies.map((item: any, index: number) => normalizeCommentReply(item, index));
+  const repliesCount = Math.max(
+    Math.max(0, Math.round(pickNumber(source?.replies, source?.replies_count, source?.reply_count))),
+    replyItems.length,
+  );
   return {
     id,
     userId: userId || undefined,
@@ -207,11 +279,12 @@ function normalizeComment(raw: any, fallbackIndex: number): Comment {
     time: createdAt ? formatRelativeTime(createdAt) : pickString(source?.time) || '',
     createdAt: createdAt && !Number.isNaN(new Date(createdAt).getTime()) ? new Date(createdAt).toISOString() : undefined,
     likes: Math.max(0, Math.round(pickNumber(source?.likes, source?.likes_count, source?.like_count))),
-    replies: Math.max(0, Math.round(pickNumber(source?.replies, source?.replies_count, source?.reply_count))),
+    replies: repliesCount,
     rating: Math.max(0, Math.min(5, rating || 0)),
     canEdit: Boolean(source?.can_edit ?? source?.canEdit),
     canDelete: Boolean(source?.can_delete ?? source?.canDelete),
     likedByMe: Boolean(source?.liked_by_me ?? source?.likedByMe),
+    replyItems,
   };
 }
 
@@ -287,13 +360,17 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const [commentsTotal, setCommentsTotal] = React.useState<number | null>(null);
   const [isLoadingMoreComments, setIsLoadingMoreComments] = React.useState(false);
   const [commentsReloadKey, setCommentsReloadKey] = React.useState(0);
+  const [deletingCommentId, setDeletingCommentId] = React.useState<string | null>(null);
+  const [openRepliesByCommentId, setOpenRepliesByCommentId] = React.useState<Record<string, boolean>>({});
+  const [replyDraftsByCommentId, setReplyDraftsByCommentId] = React.useState<Record<string, string>>({});
+  const [replySubmittingByCommentId, setReplySubmittingByCommentId] = React.useState<Record<string, boolean>>({});
 
   const handlePostComment = async () => {
     const nextText = commentText.trim();
     if (!nextText) return;
 
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
-    if (!readToken()) {
+    if (!canUseProtectedFeatures()) {
       requestAuth('feature', {
         returnTo: {
           page: 'book-details',
@@ -331,7 +408,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     const nextText = editingText.trim();
     if (!nextText) return;
 
-    if (!readToken()) {
+    if (!canUseProtectedFeatures()) {
       requestAuth('feature', {
         returnTo: {
           page: 'book-details',
@@ -362,6 +439,159 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const handleEditCancel = () => {
     setEditingCommentId(null);
     setEditingText('');
+  };
+
+  const handleDeleteComment = async (comment: Comment) => {
+    const commentId = String(comment?.id || '').trim();
+    if (!commentId || deletingCommentId === commentId) return;
+
+    if (!canUseProtectedFeatures()) {
+      requestAuth('feature', {
+        returnTo: {
+          page: 'book-details',
+          data: currentBook,
+        },
+      });
+      return;
+    }
+
+    const ok = typeof window === 'undefined' ? true : window.confirm('Delete this comment?');
+    if (!ok) return;
+
+    setDeletingCommentId(commentId);
+    setCommentsError('');
+    try {
+      await reviewService.remove(commentId);
+      setComments((prev) => prev.filter((item) => item.id !== commentId));
+      setCommentsTotal((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev));
+      setOpenRepliesByCommentId((prev) => {
+        const next = {...prev};
+        delete next[commentId];
+        return next;
+      });
+      setReplyDraftsByCommentId((prev) => {
+        const next = {...prev};
+        delete next[commentId];
+        return next;
+      });
+      setReplySubmittingByCommentId((prev) => {
+        const next = {...prev};
+        delete next[commentId];
+        return next;
+      });
+      if (editingCommentId === commentId) {
+        setEditingCommentId(null);
+        setEditingText('');
+      }
+    } catch (error: any) {
+      const status = Number(error?.status);
+      if (status === 401) {
+        requestAuth('feature', {
+          returnTo: {
+            page: 'book-details',
+            data: currentBook,
+          },
+        });
+        return;
+      }
+      if (status === 404) {
+        // Already gone on backend; keep UI consistent.
+        setComments((prev) => prev.filter((item) => item.id !== commentId));
+        setCommentsTotal((prev) => (typeof prev === 'number' ? Math.max(0, prev - 1) : prev));
+        return;
+      }
+      setCommentsError(error?.data?.message || error?.message || 'Unable to delete this comment.');
+    } finally {
+      setDeletingCommentId((prev) => (prev === commentId ? null : prev));
+    }
+  };
+
+  const toggleRepliesPanel = (commentId: string) => {
+    setOpenRepliesByCommentId((prev) => ({...prev, [commentId]: !prev[commentId]}));
+  };
+
+  const handleReplyDraftChange = (commentId: string, value: string) => {
+    setReplyDraftsByCommentId((prev) => ({...prev, [commentId]: value}));
+  };
+
+  const handlePostReply = async (comment: Comment) => {
+    const nextText = String(replyDraftsByCommentId[comment.id] || '').trim();
+    if (!nextText) return;
+
+    if (!canUseProtectedFeatures()) {
+      requestAuth('feature', {
+        returnTo: {
+          page: 'book-details',
+          data: currentBook,
+        },
+      });
+      return;
+    }
+
+    setReplySubmittingByCommentId((prev) => ({...prev, [comment.id]: true}));
+    setCommentsError('');
+
+    try {
+      const response = await reviewService.createReply(comment.id, {
+        text: nextText,
+        rating: comment.rating > 0 ? Math.round(comment.rating) : undefined,
+      });
+      const source = pickObject(response);
+      const created = source?.data ?? source;
+      const createdReply = normalizeCommentReply(created, 0);
+
+      setComments((prev) =>
+        prev.map((item) => {
+          if (item.id !== comment.id) return item;
+          const nextReplies = [...(item.replyItems || []), createdReply];
+          return {
+            ...item,
+            replyItems: nextReplies,
+            replies: Math.max(item.replies + 1, nextReplies.length),
+          };
+        }),
+      );
+      setReplyDraftsByCommentId((prev) => ({...prev, [comment.id]: ''}));
+      setOpenRepliesByCommentId((prev) => ({...prev, [comment.id]: true}));
+    } catch (error: any) {
+      const status = Number(error?.status);
+      if (Number(error?.status) === 401) {
+        requestAuth('feature', {
+          returnTo: {
+            page: 'book-details',
+            data: currentBook,
+          },
+        });
+        return;
+      }
+      if (status === 404 || status === 405) {
+        const localReply: CommentReply = {
+          id: `reply-local-${Date.now()}-${Math.round(Math.random() * 10000)}`,
+          user: currentProfile.name || 'Library User',
+          avatar: asAbsoluteAssetUrl(currentProfile.photo) || 'https://picsum.photos/seed/user/100/100',
+          text: nextText,
+          time: 'Just now',
+          createdAt: new Date().toISOString(),
+        };
+        setComments((prev) =>
+          prev.map((item) => {
+            if (item.id !== comment.id) return item;
+            const nextReplies = [...(item.replyItems || []), localReply];
+            return {
+              ...item,
+              replyItems: nextReplies,
+              replies: Math.max(item.replies + 1, nextReplies.length),
+            };
+          }),
+        );
+        setReplyDraftsByCommentId((prev) => ({...prev, [comment.id]: ''}));
+        setOpenRepliesByCommentId((prev) => ({...prev, [comment.id]: true}));
+        return;
+      }
+      setCommentsError(error?.data?.message || error?.message || 'Unable to post your reply.');
+    } finally {
+      setReplySubmittingByCommentId((prev) => ({...prev, [comment.id]: false}));
+    }
   };
 
   React.useEffect(() => {
@@ -400,7 +630,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
     const pending = readPendingBookRating();
     if (!pending || pending.bookId !== normalizedBookId) return;
-    if (!readToken()) return;
+    if (!canUseProtectedFeatures()) return;
     if (isSubmittingRating) return;
 
     clearPendingBookRating();
@@ -417,6 +647,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     setCommentsPage(1);
     setCommentsHasMore(false);
     setCommentsTotal(null);
+    setOpenRepliesByCommentId({});
+    setReplyDraftsByCommentId({});
+    setReplySubmittingByCommentId({});
 
     const pickList = (payload: any) => {
       const source = pickObject(payload);
@@ -549,7 +782,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       setRatingError('Select a star rating first.');
       return;
     }
-    if (!readToken()) {
+    if (!canUseProtectedFeatures()) {
       savePendingBookRating(normalizedBookId, nextRating);
       requestAuth('feature', {
         returnTo: {
@@ -577,14 +810,25 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     } catch (error: any) {
       if (Number(error?.status) === 401) {
         savePendingBookRating(normalizedBookId, nextRating);
-        authService.clearToken();
-        requestAuth('feature', {
-          returnTo: {
-            page: 'book-details',
-            data: currentBook,
-          },
-        });
-        setRatingError('Session expired. Please login to submit your rating.');
+        const rawMessage = String(error?.data?.message || error?.message || '').toLowerCase();
+        const likelyExpiredSession =
+          !readToken() ||
+          rawMessage.includes('unauthenticated') ||
+          rawMessage.includes('token expired') ||
+          rawMessage.includes('invalid token');
+
+        if (likelyExpiredSession) {
+          requestAuth('feature', {
+            returnTo: {
+              page: 'book-details',
+              data: currentBook,
+            },
+          });
+          setRatingError('Session expired. Please login to submit your rating.');
+          return;
+        }
+
+        setRatingError(error?.data?.message || error?.message || 'Unable to submit your rating.');
         return;
       }
       setRatingError(error?.data?.message || error?.message || 'Unable to submit your rating.');
@@ -600,7 +844,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const handleQuickRate = async (star: number) => {
     setSelectedRating(star);
     setRatingError('');
-    if (!readToken()) {
+    if (!canUseProtectedFeatures()) {
       savePendingBookRating(normalizeBackendBookId(currentBook.id), star);
       requestAuth('feature', {
         returnTo: {
@@ -935,7 +1179,13 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               ) : !comments.length ? (
                 <p className="text-sm text-text-muted">No comments yet. Be the first to comment.</p>
               ) : null}
-              {comments.map((comment) => (
+              {comments.map((comment) => {
+                const replyItems = comment.replyItems || [];
+                const isRepliesOpen = Boolean(openRepliesByCommentId[comment.id]);
+                const replyDraft = String(replyDraftsByCommentId[comment.id] || '');
+                const isReplySubmitting = Boolean(replySubmittingByCommentId[comment.id]);
+
+                return (
                 <div key={comment.id} className="p-6 rounded-2xl bg-surface border border-border space-y-4 hover:border-primary/30 transition-all">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -950,6 +1200,18 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
+                      {(comment.canDelete ||
+                        comment.user.trim().toLowerCase() === currentProfile.name.trim().toLowerCase()) &&
+                        editingCommentId !== comment.id && (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteComment(comment)}
+                          disabled={deletingCommentId === comment.id}
+                          className="text-[10px] font-bold text-red-500 uppercase tracking-widest hover:underline disabled:opacity-50"
+                        >
+                          {deletingCommentId === comment.id ? 'Deleting...' : 'Delete'}
+                        </button>
+                      )}
                       {(comment.canEdit ||
                         comment.user.trim().toLowerCase() === currentProfile.name.trim().toLowerCase()) &&
                         editingCommentId !== comment.id && (
@@ -998,13 +1260,60 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       <Icons.Heart className="size-3" />
                       {comment.likes} Likes
                     </button>
-                    <button type="button" className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-primary transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => toggleRepliesPanel(comment.id)}
+                      className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-primary transition-colors"
+                    >
                       <Icons.MessageSquare className="size-3" />
-                      {comment.replies} Replies
+                      {isRepliesOpen ? 'Hide Replies' : `${comment.replies} ${comment.replies === 1 ? 'Reply' : 'Replies'}`}
                     </button>
                   </div>
+
+                  {isRepliesOpen ? (
+                    <div className="space-y-3 rounded-xl border border-border bg-bg/40 p-3">
+                      {replyItems.length ? (
+                        <div className="space-y-3">
+                          {replyItems.map((reply) => (
+                            <div key={reply.id} className="rounded-lg border border-border/70 bg-surface/70 p-3">
+                              <div className="mb-2 flex items-center gap-2">
+                                <div className="size-6 rounded-full overflow-hidden border border-border bg-primary/20">
+                                  <img src={reply.avatar} alt={reply.user} />
+                                </div>
+                                <p className="text-xs font-bold text-text">{reply.user}</p>
+                                <p className="text-[10px] text-text-muted">
+                                  {reply.createdAt ? formatRelativeTime(reply.createdAt, nowTick) : reply.time}
+                                </p>
+                              </div>
+                              <p className="text-xs text-text-muted leading-relaxed">{reply.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-text-muted">No replies yet. Be the first to reply.</p>
+                      )}
+
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={replyDraft}
+                          onChange={(e) => handleReplyDraftChange(comment.id, e.target.value)}
+                          placeholder="Write a reply..."
+                          className="flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-text placeholder:text-text-muted outline-none focus:border-primary"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handlePostReply(comment)}
+                          disabled={!replyDraft.trim() || isReplySubmitting}
+                          className="rounded-lg bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {isReplySubmitting ? 'Sending...' : 'Reply'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-              ))}
+              )})}
             </div>
             
             {commentsHasMore ? (

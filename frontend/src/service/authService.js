@@ -60,6 +60,11 @@ const storeToken = (token) => {
 
 const clearToken = () => {
   localStorage.removeItem('token');
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('jwt');
+  localStorage.removeItem('bearer_token');
   try {
     window.dispatchEvent(new CustomEvent('elibrary-token-changed', {detail: null}));
   } catch {
@@ -119,7 +124,13 @@ export const authService = {
 
   me: () => apiClient.get('/api/me'),
 
-  getToken: () => localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('accessToken'),
+  getToken: () =>
+    localStorage.getItem('token') ||
+    localStorage.getItem('access_token') ||
+    localStorage.getItem('accessToken') ||
+    localStorage.getItem('auth_token') ||
+    localStorage.getItem('jwt') ||
+    localStorage.getItem('bearer_token'),
 
   setToken: (token) => storeToken(token),
 

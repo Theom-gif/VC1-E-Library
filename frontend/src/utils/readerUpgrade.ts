@@ -54,6 +54,11 @@ export function isGuestSession(): boolean {
   return String(getSession()?.id || '') === 'guest';
 }
 
+export function hasAuthenticatedSession(): boolean {
+  const id = String(getSession()?.id || '').trim();
+  return Boolean(id) && id !== 'guest';
+}
+
 export function isAuthRequired(): boolean {
   return String(safeLocalStorageGet(AUTH_REQUIRED_KEY) || '') === 'true';
 }

@@ -2,7 +2,7 @@ import * as React from 'react';
 import type {BookType} from '../types';
 import favoriteService from '../service/favoriteService';
 import {toBookType} from '../service/bookMapper';
-import {requestAuth} from '../utils/readerUpgrade';
+import {hasAuthenticatedSession, requestAuth} from '../utils/readerUpgrade';
 import authService from '../service/authService';
 
 type FavoritesState = {
@@ -44,21 +44,17 @@ function safeLocalStorageSet(key: string, value: string) {
   }
 }
 
-function safeLocalStorageRemove(key: string) {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
-}
-
 function hasToken(): boolean {
   try {
     return Boolean(authService.getToken());
   } catch {
     return false;
   }
+}
+
+function canUseAccountFeatures(): boolean {
+  if (hasToken()) return true;
+  return hasAuthenticatedSession();
 }
 
 function readLocalFavorites(): BookType[] {
@@ -120,8 +116,7 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
   const handleUnauthenticated = React.useCallback((requestError: any) => {
     const status = Number(requestError?.status);
     if (status !== 401) return false;
-    // Token exists but backend rejects it. Treat as logged-out and keep local favorites.
-    safeLocalStorageRemove('token');
+    // Keep current token state; some APIs may return 401 for endpoint-specific reasons.
     setError(pickErrorMessage(requestError));
     requestAuth('feature');
     return true;
@@ -131,7 +126,7 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
     setIsLoading(true);
     setError(null);
     try {
-      if (!hasToken()) {
+      if (!canUseAccountFeatures()) {
         const local = readLocalFavorites();
         setFavorites(local);
         writeLocalFavorites(local);
@@ -177,7 +172,7 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
     if (!id) return;
     if (favoriteIds.has(id)) return;
 
-    if (!hasToken()) {
+    if (!canUseAccountFeatures()) {
       const next = uniqueById([book, ...favorites]);
       setFavorites(next);
       writeLocalFavorites(next);
@@ -203,7 +198,7 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
     if (!id) return;
     if (!favoriteIds.has(id)) return;
 
-    if (!hasToken()) {
+    if (!canUseAccountFeatures()) {
       const next = favorites.filter((b) => normalizeBookId(b?.id) !== id);
       setFavorites(next);
       writeLocalFavorites(next);

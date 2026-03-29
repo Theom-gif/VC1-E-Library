@@ -1,5 +1,7 @@
 import React from 'react';
 import profileService, {type ProfileSummary} from '../service/profileService';
+import {requestAuth} from '../utils/readerUpgrade';
+import authService from '../service/authService';
 
 export type UpdateProfileInput = {
   firstname: string;
@@ -20,6 +22,26 @@ export function useUserProfile() {
     profileRef.current = profile;
   }, [profile]);
 
+  const mapRequestError = React.useCallback((err: any) => {
+    const status = Number(err?.status);
+    if (status !== 401) return err;
+
+    const hasToken = Boolean(authService.getToken());
+    if (hasToken) return err;
+
+    requestAuth('feature');
+
+    const message = 'Session expired. Please login again.';
+    return {
+      ...err,
+      message,
+      data: {
+        ...(err?.data && typeof err.data === 'object' ? err.data : {}),
+        message,
+      },
+    };
+  }, []);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -27,10 +49,14 @@ export function useUserProfile() {
       const next = await profileService.me();
       setProfile(next);
       return next;
+    } catch (err: any) {
+      const mapped = mapRequestError(err);
+      setError(mapped);
+      throw mapped;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mapRequestError]);
 
   const update = React.useCallback(
     async (input: UpdateProfileInput) => {
@@ -61,14 +87,15 @@ export function useUserProfile() {
         setProfile(saved);
         return saved;
       } catch (err) {
+        const mapped = mapRequestError(err);
         setProfile(previous);
-        setError(err);
-        throw err;
+        setError(mapped);
+        throw mapped;
       } finally {
         setSaving(false);
       }
     },
-    [],
+    [mapRequestError],
   );
 
   const uploadAvatar = React.useCallback(async (file: File) => {
@@ -79,12 +106,13 @@ export function useUserProfile() {
       setProfile((prev) => (prev ? {...prev, photo: saved.photo || prev.photo} : saved));
       return saved.photo;
     } catch (err) {
-      setError(err);
-      throw err;
+      const mapped = mapRequestError(err);
+      setError(mapped);
+      throw mapped;
     } finally {
       setUploadingAvatar(false);
     }
-  }, []);
+  }, [mapRequestError]);
 
   return {
     profile,

@@ -122,7 +122,9 @@ function readToken(): string | null {
       localStorage.getItem('token') ||
       localStorage.getItem('access_token') ||
       localStorage.getItem('accessToken') ||
-      localStorage.getItem('auth_token');
+      localStorage.getItem('auth_token') ||
+      localStorage.getItem('jwt') ||
+      localStorage.getItem('bearer_token');
     const normalized = String(token ?? '').trim();
     return normalized || null;
   } catch {

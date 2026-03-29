@@ -1,5 +1,6 @@
 import React from 'react';
 import {Icons} from '../types';
+import AvatarImage from '../components/AvatarImage';
 import authorService, {AuthorType} from '../service/authorService';
 
 interface AuthorsProps {
@@ -19,7 +20,9 @@ export default function Authors({onNavigate}: AuthorsProps) {
   const [authors, setAuthors] = React.useState<AuthorType[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState('');
-  const [source, setSource] = React.useState<'authors-endpoint' | 'books-fallback'>('authors-endpoint');
+  const [source, setSource] = React.useState<'authors-endpoint' | 'users-role-fallback' | 'books-fallback'>(
+    'authors-endpoint',
+  );
   const [reloadTick, setReloadTick] = React.useState(0);
 
   React.useEffect(() => {
@@ -83,6 +86,12 @@ export default function Authors({onNavigate}: AuthorsProps) {
         </div>
       </section>
 
+      {source === 'users-role-fallback' && !error ? (
+        <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-text-muted">
+          Loaded authors from user records with author role.
+        </div>
+      ) : null}
+
       {source === 'books-fallback' && !error ? (
         <div className="rounded-2xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-text-muted">
           Author list endpoint is unavailable. Showing authors derived from books API.
@@ -121,8 +130,8 @@ export default function Authors({onNavigate}: AuthorsProps) {
               className="rounded-3xl border border-border bg-surface p-6 transition-all hover:border-primary/35 hover:-translate-y-0.5"
             >
               <div className="flex items-start gap-4">
-                <img
-                  src={author.photo || `https://picsum.photos/seed/${encodeURIComponent(author.name)}/160/160`}
+                <AvatarImage
+                  src={author.photo || ''}
                   alt={author.name}
                   className="size-16 rounded-full border border-border object-cover"
                 />
@@ -152,7 +161,7 @@ export default function Authors({onNavigate}: AuthorsProps) {
               <button
                 type="button"
                 className="mt-5 w-full rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
-                onClick={() => onNavigate('author-details', author.name)}
+                onClick={() => onNavigate('author-details', {id: author.id, name: author.name})}
               >
                 View Author
               </button>

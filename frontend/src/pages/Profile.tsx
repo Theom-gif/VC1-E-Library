@@ -354,20 +354,6 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
 
         <div className="space-y-12">
           <section className="space-y-6">
-            <h3 className="text-xl font-bold text-text">{t('profile.achievements')}</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <Achievement icon={<Icons.Flame className="text-orange-500" />} label="Streak" />
-              <Achievement icon={<Icons.Award className="text-yellow-500" />} label="Elite" />
-              <Achievement icon={<Icons.Rocket className="text-primary" />} label="Fast" />
-              <Achievement icon={<Icons.BookOpen className="text-emerald-500" />} label="Scholar" />
-              <Achievement icon={<Icons.Star className="text-purple-500" />} label="Critic" />
-              <div className="aspect-square rounded-2xl bg-surface border border-border flex items-center justify-center text-text-muted/20">
-                <Icons.Plus className="size-6" />
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-bold text-text">{t('profile.friends')}</h3>
               <button className="text-xs font-bold text-primary hover:underline">{t('profile.seeAll')}</button>
@@ -401,17 +387,6 @@ function StatBadge({label, value, icon}: {label: string; value: string; icon: Re
         <span className="text-[10px] font-bold text-text-muted uppercase tracking-tighter leading-none">{label}</span>
         <span className="text-xs font-bold text-text">{value}</span>
       </div>
-    </div>
-  );
-}
-
-function Achievement({icon, label}: {icon: React.ReactNode; label: string}) {
-  return (
-    <div className="aspect-square rounded-2xl bg-surface border border-border flex flex-col items-center justify-center gap-2 group hover:border-primary/30 transition-all cursor-pointer">
-      <div className="size-8 rounded-full bg-surface flex items-center justify-center transition-transform group-hover:scale-110">
-        {icon}
-      </div>
-      <span className="text-[10px] font-bold text-text-muted uppercase">{label}</span>
     </div>
   );
 }

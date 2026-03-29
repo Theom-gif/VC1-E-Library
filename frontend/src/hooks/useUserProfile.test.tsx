@@ -1,5 +1,5 @@
 import {renderHook, act} from '@testing-library/react';
-import {describe, expect, it, vi} from 'vitest';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 vi.mock('../service/profileService', () => ({
   default: {
@@ -9,8 +9,13 @@ vi.mock('../service/profileService', () => ({
   },
 }));
 
+vi.mock('../utils/readerUpgrade', () => ({
+  requestAuth: vi.fn(),
+}));
+
 const {useUserProfile} = await import('./useUserProfile');
 const profileService = (await import('../service/profileService')).default;
+const {requestAuth} = await import('../utils/readerUpgrade');
 
 const mockedProfileService = profileService as unknown as {
   me: ReturnType<typeof vi.fn>;
@@ -18,7 +23,85 @@ const mockedProfileService = profileService as unknown as {
   uploadAvatar: ReturnType<typeof vi.fn>;
 };
 
+const mockedRequestAuth = requestAuth as unknown as ReturnType<typeof vi.fn>;
+
 describe('useUserProfile', () => {
+  beforeEach(() => {
+    if (typeof globalThis.localStorage === 'undefined') {
+      const memoryStore = new Map<string, string>();
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        value: {
+          getItem: (key: string) => (memoryStore.has(key) ? memoryStore.get(key)! : null),
+          setItem: (key: string, value: string) => {
+            memoryStore.set(key, String(value));
+          },
+          removeItem: (key: string) => {
+            memoryStore.delete(key);
+          },
+          clear: () => {
+            memoryStore.clear();
+          },
+        },
+      });
+    }
+
+    vi.clearAllMocks();
+    globalThis.localStorage.clear();
+  });
+
+  it('maps 401 upload errors to session-expired and triggers reauth when token is missing', async () => {
+    mockedProfileService.uploadAvatar.mockRejectedValueOnce({
+      status: 401,
+      message: 'Unauthenticated.',
+      data: {message: 'Unauthenticated.'},
+    });
+
+    const {result} = renderHook(() => useUserProfile());
+    const file = new File(['x'], 'a.jpg', {type: 'image/jpeg'});
+    let thrown: any;
+
+    await act(async () => {
+      try {
+        await result.current.uploadAvatar(file);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(mockedRequestAuth).toHaveBeenCalledWith('feature');
+    expect(thrown?.status).toBe(401);
+    expect(thrown?.message).toBe('Session expired. Please login again.');
+    expect(thrown?.data?.message).toBe('Session expired. Please login again.');
+    expect(result.current.error?.data?.message).toBe('Session expired. Please login again.');
+  });
+
+  it('keeps token and does not force reauth for 401 when token exists', async () => {
+    mockedProfileService.uploadAvatar.mockRejectedValueOnce({
+      status: 401,
+      message: 'Unauthenticated.',
+      data: {message: 'Unauthenticated.'},
+    });
+    localStorage.setItem('token', 'still-valid-token');
+
+    const {result} = renderHook(() => useUserProfile());
+    const file = new File(['x'], 'a.jpg', {type: 'image/jpeg'});
+    let thrown: any;
+
+    await act(async () => {
+      try {
+        await result.current.uploadAvatar(file);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(mockedRequestAuth).not.toHaveBeenCalled();
+    expect(localStorage.getItem('token')).toBe('still-valid-token');
+    expect(thrown?.status).toBe(401);
+    expect(thrown?.message).toBe('Unauthenticated.');
+  });
+
   it('load() populates profile', async () => {
     mockedProfileService.me.mockResolvedValueOnce({name: 'Jane Doe', photo: '/a.jpg'});
     const {result} = renderHook(() => useUserProfile());
