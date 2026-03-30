@@ -138,6 +138,27 @@ function parseContentDispositionFilename(contentDisposition: string | null): str
   }
 }
 
+function filenameFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url, currentWindowOrigin() || 'http://localhost');
+    const last = String(parsed.pathname || '').split('/').filter(Boolean).pop() || '';
+    return last.trim();
+  } catch {
+    const raw = String(url || '');
+    const parts = raw.split('?')[0].split('#')[0].split('/').filter(Boolean);
+    return String(parts[parts.length - 1] || '').trim();
+  }
+}
+
+function guessMimeType(fileName: string): string {
+  const name = String(fileName || '').trim().toLowerCase();
+  if (name.endsWith('.pdf')) return 'application/pdf';
+  if (name.endsWith('.epub')) return 'application/epub+zip';
+  if (name.endsWith('.txt')) return 'text/plain';
+  if (name.endsWith('.html') || name.endsWith('.htm')) return 'text/html';
+  return '';
+}
+
 function ensureAbsoluteUrl(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return '';
@@ -192,7 +213,8 @@ function shouldAttachDownloadAuthHeader(url: string): boolean {
 async function resolveDownloadUrl(bookId: string): Promise<string> {
   const normalizedBookId = normalizeBackendBookId(bookId);
   const payload = (await bookService.download(normalizedBookId)) as any;
-  const url = pickString(
+
+  const candidates = [
     payload?.download_url,
     payload?.stream_url,
     payload?.url,
@@ -201,7 +223,36 @@ async function resolveDownloadUrl(bookId: string): Promise<string> {
     payload?.data?.stream_url,
     payload?.data?.url,
     payload?.data?.read_url,
-  );
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  const unique: string[] = [];
+  for (const item of candidates) {
+    if (!unique.includes(item)) unique.push(item);
+  }
+
+  const scoreUrl = (value: string): number => {
+    const raw = String(value || '').toLowerCase();
+    if (!raw) return 0;
+    // Prefer PDF for in-browser offline preview.
+    if (raw.includes('.pdf')) return 100;
+    if (raw.includes('format=pdf') || raw.includes('type=pdf')) return 80;
+    if (raw.includes('.epub')) return 20;
+    return 1;
+  };
+
+  let best = '';
+  let bestScore = -1;
+  for (const candidate of unique) {
+    const score = scoreUrl(candidate);
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  const url = pickString(best);
 
   if (!url) {
     throw new Error('Backend did not return a download URL. Expected `download_url`, `stream_url`, `url`, or `read_url`.');
@@ -309,8 +360,18 @@ async function fetchBlobWithProgress(
     throw new Error(`Download failed with status ${response.status}`);
   }
 
-  const mimeType = String(response.headers.get('content-type') || 'application/octet-stream');
-  const fileName = parseContentDispositionFilename(response.headers.get('content-disposition'));
+  const contentType = String(response.headers.get('content-type') || '').trim();
+  const cdFileName = parseContentDispositionFilename(response.headers.get('content-disposition'));
+  const urlFileName = filenameFromUrl(url);
+  const fileName = pickString(cdFileName, urlFileName);
+
+  const inferredMime = guessMimeType(fileName);
+  const mimeType =
+    contentType &&
+    !contentType.toLowerCase().includes('application/octet-stream') &&
+    !contentType.toLowerCase().includes('binary/octet-stream')
+      ? contentType
+      : inferredMime || 'application/octet-stream';
   const totalBytesHeader = response.headers.get('content-length');
   const totalBytes = totalBytesHeader ? Number(totalBytesHeader) : NaN;
   const total = Number.isFinite(totalBytes) && totalBytes > 0 ? totalBytes : null;
@@ -634,12 +695,22 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
       } catch {}
       throw new Error('This book is not downloaded on this device.');
     }
-    const url = URL.createObjectURL(record.blob);
+    const effectiveMime =
+      pickString(record.mimeType, record.blob?.type) ||
+      guessMimeType(pickString(record.fileName));
+    const blobToOpen =
+      effectiveMime && record.blob && record.blob.type !== effectiveMime
+        ? new Blob([record.blob], {type: effectiveMime})
+        : record.blob;
+
+    const url = URL.createObjectURL(blobToOpen);
     try {
       openReaderTab({
         title: record.book?.title || 'Offline Read',
         url,
         tab,
+        mimeType: effectiveMime || record.mimeType,
+        fileName: record.fileName,
         tracking: {
           bookId: normalized,
           source: 'offline',

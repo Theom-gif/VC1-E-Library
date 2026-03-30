@@ -5,6 +5,8 @@ type OpenReaderTabArgs = {
   title: string;
   url: string;
   tab?: Window | null;
+  mimeType?: string;
+  fileName?: string;
   tracking?: {
     bookId: string;
     source: ReadingSessionSource;
@@ -122,13 +124,21 @@ function wireReadingTracking(
   void startSession();
 }
 
-export function openReaderTab({title, url, tracking, tab: providedTab}: OpenReaderTabArgs) {
+export function openReaderTab({title, url, tracking, tab: providedTab, mimeType, fileName}: OpenReaderTabArgs) {
   const safeTitle = escapeHtml(title || 'Reader');
   const safeAppTitle = escapeHtml(APP_TAB_TITLE);
   const safeFaviconSrc = escapeHtml(FAVICON_SRC);
   const safeUrl = escapeHtml(url);
   const trackingId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const safeTrackingId = escapeHtml(trackingId);
+  const normalizedMime = String(mimeType || '').trim().toLowerCase();
+  const normalizedFileName = String(fileName || '').trim();
+  const safeFileName = escapeHtml(normalizedFileName);
+
+  const isPdf = normalizedMime.includes('pdf') || /\.pdf(\?|#|$)/i.test(url);
+  const isEpub = normalizedMime.includes('epub') || /\.epub(\?|#|$)/i.test(url);
+  const canPreview = isPdf || (!isEpub && (normalizedMime.startsWith('text/') || normalizedMime.includes('html')));
+  const showPreviewUnavailable = !canPreview && (isEpub || Boolean(normalizedMime));
 
   const tab = providedTab && !providedTab.closed ? providedTab : window.open('', '_blank');
   if (!tab) {
@@ -166,7 +176,18 @@ export function openReaderTab({title, url, tracking, tab: providedTab}: OpenRead
       </div>
       <a href="${safeUrl}" target="_blank" rel="noreferrer noopener">Open file</a>
     </div>
-    <iframe class="frame" src="${safeUrl}" title="${safeTitle}"></iframe>
+    ${
+      showPreviewUnavailable
+        ? `<div class="fallback">
+            <div style="font-weight:700;margin-bottom:6px;">Preview not available in-browser.</div>
+            <div style="color:#94a3b8;line-height:1.5;">
+              ${isEpub ? 'This looks like an EPUB file.' : 'This file type may not be supported for preview.'}
+              ${safeFileName ? ` File: <span style="color:#e5e7eb">${safeFileName}</span>.` : ''}
+              Use <strong>Open file</strong> to download/open it with an external reader app.
+            </div>
+          </div>`
+        : `<iframe class="frame" src="${safeUrl}" title="${safeTitle}"></iframe>`
+    }
     <script>
       (function () {
         var trackingId = "${safeTrackingId}";

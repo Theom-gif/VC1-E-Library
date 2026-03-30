@@ -1156,6 +1156,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
         title: currentBook.title || 'Read',
         url,
         tab,
+        mimeType: /\.pdf(\?|#|$)/i.test(url) ? 'application/pdf' : undefined,
         tracking: {
           bookId: normalizedBookId,
           source: 'web',
