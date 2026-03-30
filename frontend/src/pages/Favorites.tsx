@@ -12,7 +12,7 @@ interface FavoritesProps {
 type TabType = 'All Favorites' | 'Recently Added' | 'Reading Progress' | 'Completed';
 
 export default function Favorites({ onNavigate }: FavoritesProps) {
-  const {favorites, isLoading, error, refresh} = useFavorites();
+  const {favorites, isLoading, refresh} = useFavorites();
   const [activeTab, setActiveTab] = useState<TabType>('All Favorites');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -61,22 +61,17 @@ export default function Favorites({ onNavigate }: FavoritesProps) {
               className="pl-10 pr-4 py-2 rounded-xl bg-surface border border-border text-text text-sm focus:ring-primary focus:border-primary outline-none w-64"
             />
           </div>
-        </div>
-      </div>
-
-      {(isLoading || error) && (
-        <div className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface px-4 py-3">
-          <div className="text-sm text-text-muted">
-            {isLoading ? 'Loading favorites...' : error}
-          </div>
           <button
+            type="button"
             onClick={() => void refresh()}
-            className="text-xs font-bold uppercase tracking-widest text-primary hover:underline"
+            disabled={isLoading}
+            className="rounded-xl border border-border bg-surface px-4 py-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text disabled:opacity-50"
+            title="Refresh favorites"
           >
-            Refresh
+            {isLoading ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
-      )}
+      </div>
 
       <div className="flex items-center gap-4 border-b border-border pb-4 overflow-x-auto no-scrollbar">
         {tabs.map((tab) => (

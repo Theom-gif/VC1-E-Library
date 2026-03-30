@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Icons } from '../types';
+import React, {useMemo, useState} from 'react';
+import {Icons, type BookType} from '../types';
 import BookCard from '../components/BookCard';
 import {useLibrary} from '../context/LibraryContext';
 
@@ -7,17 +7,22 @@ interface CategoriesProps {
   onNavigate: (page: any, data?: any) => void;
 }
 
-const CATEGORIES = [
-  { name: 'All Genres', icon: <Icons.LayoutDashboard className="size-4" />, count: 1240 },
-  { name: 'Technology', icon: <Icons.Book className="size-4" />, count: 450 },
-  { name: 'Novel', icon: <Icons.BookOpen className="size-4" />, count: 320 },
-  { name: 'Education', icon: <Icons.Rocket className="size-4" />, count: 210 },
-  { name: 'Business', icon: <Icons.Search className="size-4" />, count: 180 },
-  { name: 'History', icon: <Icons.Award className="size-4" />, count: 150 },
-  // { name: 'Technology', icon: <Icons.Globe className="size-4" />, count: 135 },
-  // { name: 'Self-Help', icon: <Icons.Flame className="size-4" />, count: 120 },
-  // { name: 'History', icon: <Icons.History className="size-4" />, count: 95 },
-  // { name: 'Classics', icon: <Icons.Award className="size-4" />, count: 85 },
+type CategoryDef = {
+  name: string;
+  icon: React.ReactNode;
+  matches: (book: BookType) => boolean;
+};
+
+const CATEGORY_DEFS: CategoryDef[] = [
+  {name: 'All Genres', icon: <Icons.LayoutDashboard className="size-4" />, matches: () => true},
+  {name: 'Technology', icon: <Icons.Book className="size-4" />, matches: (book) => book.category === 'Technology'},
+  {name: 'Novel', icon: <Icons.BookOpen className="size-4" />, matches: (book) => book.category === 'Novel'},
+  {name: 'Education', icon: <Icons.Rocket className="size-4" />, matches: (book) => book.category === 'Education'},
+  {name: 'Business', icon: <Icons.Search className="size-4" />, matches: (book) => book.category === 'Business'},
+  {name: 'History', icon: <Icons.Award className="size-4" />, matches: (book) => book.category === 'History'},
+  // Examples for when you add these categories back:
+  // {name: 'Sci-Fi & Fantasy', icon: <Icons.Rocket className="size-4" />, matches: (book) => book.category === 'Sci-Fi' || book.category === 'Fantasy'},
+  // {name: 'Classics', icon: <Icons.Award className="size-4" />, matches: (book) => book.category === 'Classic'},
 ];
 
 const BOOKS_PER_PAGE = 8;
@@ -28,12 +33,20 @@ export default function Categories({ onNavigate }: CategoriesProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
+  const categories = useMemo(() => {
+    return CATEGORY_DEFS.map((cat) => ({
+      ...cat,
+      count: books.filter((book) => cat.matches(book)).length,
+    }));
+  }, [books]);
+
+  const activeCategoryDef = useMemo(() => {
+    return categories.find((cat) => cat.name === activeCategory) || categories[0];
+  }, [activeCategory, categories]);
+
   const filteredBooks = books.filter(book => {
     // Category Filter
-    const matchesCategory = activeCategory === 'All Genres' || 
-      (activeCategory === 'Sci-Fi & Fantasy' && (book.category === 'Sci-Fi' || book.category === 'Fantasy')) ||
-      (activeCategory === 'Classics' && book.category === 'Classic') ||
-      book.category === activeCategory;
+    const matchesCategory = activeCategoryDef?.matches ? activeCategoryDef.matches(book) : true;
     
     // Search Filter
     const matchesSearch = book.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -59,7 +72,7 @@ export default function Categories({ onNavigate }: CategoriesProps) {
         <div className="space-y-6">
           <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-text-muted px-4">Categories</h3>
           <nav className="space-y-1">
-            {CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <button
                 key={cat.name}
                 onClick={() => setActiveCategory(cat.name)}
@@ -102,7 +115,9 @@ export default function Categories({ onNavigate }: CategoriesProps) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-text">{activeCategory}</h2>
-            <p className="text-sm text-text-muted">Showing {startIndex + 1}-{Math.min(startIndex + BOOKS_PER_PAGE, filteredBooks.length)} of {filteredBooks.length} books</p>
+            <p className="text-sm text-text-muted">
+              Showing {filteredBooks.length ? startIndex + 1 : 0}-{Math.min(startIndex + BOOKS_PER_PAGE, filteredBooks.length)} of {filteredBooks.length} books
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">

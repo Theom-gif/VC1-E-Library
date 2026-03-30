@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useMemo, useRef, useState} from 'react';
 import {Icons} from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
@@ -38,6 +38,47 @@ export default function Home({
   const showError = Boolean(error && !isLoading);
   const showMock = source === 'mock' && !isLoading && !error;
   const canShowAuthOverlay = Boolean(showAuthOverlay && onLogin && onRegister);
+  const [showAllRecentlyRead, setShowAllRecentlyRead] = useState(false);
+
+  const normalizeBookId = (value: unknown) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    return raw.startsWith('api-') ? raw.slice(4) : raw;
+  };
+
+  const recentlyReadBooks = useMemo(() => {
+    const list = Array.isArray(books) ? books : [];
+    try {
+      const raw = localStorage.getItem('elibrary_read_books');
+      const parsed = raw ? JSON.parse(raw) : [];
+      const ids = Array.isArray(parsed) ? parsed.map(normalizeBookId).filter(Boolean) : [];
+      if (ids.length) {
+        const byId = new Map(list.map((b) => [normalizeBookId(b.id), b] as const));
+        const resolved = ids
+          .slice()
+          .reverse()
+          .map((id) => byId.get(id))
+          .filter(Boolean) as typeof list;
+        if (resolved.length) return resolved;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Fallback: show books with progress/status, else first items.
+    const byProgress = list.filter((b) => (Number(b.progress) || 0) > 0 || b.status === 'Currently Reading');
+    return (byProgress.length ? byProgress : list).slice(0, 12);
+  }, [books]);
+
+  const recentlyReadPreview = useMemo(() => recentlyReadBooks.slice(0, 3), [recentlyReadBooks]);
+
+  const newArrivalsScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollNewArrivals = (direction: 'left' | 'right') => {
+    const el = newArrivalsScrollRef.current;
+    if (!el) return;
+    const delta = Math.max(240, Math.round(el.clientWidth * 0.9));
+    el.scrollBy({left: direction === 'left' ? -delta : delta, behavior: 'smooth'});
+  };
 
   const topRatedBooks = useMemo(() => {
     const list = Array.isArray(books) ? books : [];
@@ -436,6 +477,7 @@ export default function Home({
       </section>
 
       {/* Recently Read */}
+      {recentlyReadPreview.length ? (
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -444,10 +486,18 @@ export default function Home({
             </div>
             <h3 className="text-xl font-bold">Recently Read</h3>
           </div>
-          <button className="text-sm font-bold text-primary hover:underline">View All</button>
+          {recentlyReadBooks.length > 3 ? (
+            <button
+              type="button"
+              className="text-sm font-bold text-primary hover:underline"
+              onClick={() => setShowAllRecentlyRead(true)}
+            >
+              View All
+            </button>
+          ) : null}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {books.slice(0, 3).map((book) => {
+          {recentlyReadPreview.map((book) => {
             const progress = Number.isFinite(Number(book.progress)) ? Number(book.progress) : 0;
             const timeLeft = String(book.timeLeft || '').trim();
 
@@ -479,6 +529,52 @@ export default function Home({
           })}
         </div>
       </section>
+      ) : null}
+
+      {showAllRecentlyRead ? (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 px-4 py-10 overflow-y-auto backdrop-blur-md">
+            <div className="w-full max-w-6xl rounded-3xl border border-border bg-bg shadow-2xl">
+              <div className="flex items-center justify-between border-b border-border px-6 py-5">
+                <div className="flex items-center gap-2">
+                  <Icons.History className="size-5 text-orange-500" />
+                  <h4 className="text-base font-black text-text">Recently Read</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAllRecentlyRead(false)}
+                  className="rounded-xl border border-border bg-surface p-2 text-text-muted hover:text-text hover:bg-white/5 transition-all"
+                  aria-label="Close"
+                >
+                  <Icons.X className="size-4" />
+                </button>
+              </div>
+              <div className="px-6 py-6">
+                {recentlyReadBooks.length ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+                    {recentlyReadBooks.map((book) => (
+                      <BookCard
+                        key={book.id}
+                        book={book}
+                        onClick={() => {
+                          setShowAllRecentlyRead(false);
+                          onNavigate('book-details', book);
+                        }}
+                        onNavigate={onNavigate}
+                        onAuthorClick={(author) => onNavigate('author-details', author)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-border bg-surface px-4 py-8 text-center text-sm text-text-muted">
+                    No recently read books yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      ) : null}
 
       {/* New Arrivals */}
       <section className="space-y-6">
@@ -490,23 +586,37 @@ export default function Home({
             <h3 className="text-xl font-bold">New Arrivals</h3>
           </div>
           <div className="flex gap-2">
-            <button className="p-2 rounded-lg bg-surface border border-border hover:bg-white/10 transition-all">
+            <button
+              type="button"
+              onClick={() => scrollNewArrivals('left')}
+              className="p-2 rounded-lg bg-surface border border-border hover:bg-white/10 transition-all"
+              aria-label="Scroll left"
+            >
               <Icons.ChevronLeft className="size-4 text-text" />
             </button>
-            <button className="p-2 rounded-lg bg-surface border border-border hover:bg-white/10 transition-all">
+            <button
+              type="button"
+              onClick={() => scrollNewArrivals('right')}
+              className="p-2 rounded-lg bg-surface border border-border hover:bg-white/10 transition-all"
+              aria-label="Scroll right"
+            >
               <Icons.ChevronRight className="size-4 text-text" />
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+        <div
+          ref={newArrivalsScrollRef}
+          className="flex gap-6 overflow-x-auto scroll-smooth no-scrollbar pb-2"
+        >
           {newArrivals.map((book) => (
-            <BookCard
-              key={book.id}
-              book={book}
-              onClick={() => onNavigate('book-details', book)}
-              onNavigate={onNavigate}
-              onAuthorClick={(author) => onNavigate('author-details', author)}
-            />
+            <div key={book.id} className="shrink-0 w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px]">
+              <BookCard
+                book={book}
+                onClick={() => onNavigate('book-details', book)}
+                onNavigate={onNavigate}
+                onAuthorClick={(author) => onNavigate('author-details', author)}
+              />
+            </div>
           ))}
         </div>
       </section>

@@ -1192,29 +1192,15 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
           <div className="grid grid-cols-2 gap-4">
             <button type="button"
               onClick={() => {
-                if (downloaded) {
-                  if (shouldRequireAuthForRead()) {
-                    requestAuth('read-limit');
-                    return;
-                  }
-                  void openOffline(normalizeBackendBookId(currentBook.id))
-                    .then(() => {
-                      trackRead(normalizeBackendBookId(currentBook.id));
-                    })
-                    .catch((err: any) => {
-                      void sweetAlert(err?.message || 'Unable to open offline book.', {icon: 'error', title: 'Error'});
-                    });
-                  return;
-                }
                 void openOnline().catch((err: any) => {
                   void sweetAlert(err?.message || 'Unable to open this book.', {icon: 'error', title: 'Error'});
                 });
               }}
               className="bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
-              title={downloaded ? 'Open offline' : 'Read in browser'}
+              title="Read in browser"
             >
               <Icons.BookOpen className="size-4" />
-              {downloaded ? 'Read Offline' : 'Read Now'}
+              Read Now
             </button>
             <button type="button"
               onClick={() => {

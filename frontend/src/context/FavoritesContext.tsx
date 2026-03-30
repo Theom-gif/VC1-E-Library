@@ -2,7 +2,7 @@ import * as React from 'react';
 import type {BookType} from '../types';
 import favoriteService from '../service/favoriteService';
 import {toBookType} from '../service/bookMapper';
-import {hasAuthenticatedSession, requestAuth} from '../utils/readerUpgrade';
+import {hasAuthenticatedSession} from '../utils/readerUpgrade';
 import authService from '../service/authService';
 
 type FavoritesState = {
@@ -94,10 +94,6 @@ function uniqueById(books: BookType[]): BookType[] {
 }
 
 function pickErrorMessage(error: any): string {
-  const status = Number(error?.status);
-  if (status === 401) {
-    return 'Session expired. Favorites are saved locally on this device. Please login again to sync with your account.';
-  }
   const message = error?.data?.message || error?.message || 'Unable to load favorites.';
   const method = String(error?.method || '').trim();
   const url = String(error?.url || '').trim();
@@ -116,9 +112,8 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
   const handleUnauthenticated = React.useCallback((requestError: any) => {
     const status = Number(requestError?.status);
     if (status !== 401) return false;
-    // Keep current token state; some APIs may return 401 for endpoint-specific reasons.
-    setError(pickErrorMessage(requestError));
-    requestAuth('feature');
+    // Favorites are available locally; don't force re-login prompts from this page.
+    setError(null);
     return true;
   }, []);
 
@@ -176,8 +171,6 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
       const next = uniqueById([book, ...favorites]);
       setFavorites(next);
       writeLocalFavorites(next);
-      setError('Login required to save favorites to your account.');
-      requestAuth('feature');
       return;
     }
 
@@ -202,8 +195,6 @@ export function FavoritesProvider({children}: {children: React.ReactNode}) {
       const next = favorites.filter((b) => normalizeBookId(b?.id) !== id);
       setFavorites(next);
       writeLocalFavorites(next);
-      setError('Login required to save favorites to your account.');
-      requestAuth('feature');
       return;
     }
 

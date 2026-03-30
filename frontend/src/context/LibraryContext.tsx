@@ -35,15 +35,15 @@ export function LibraryProvider({children}: {children: React.ReactNode}) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await bookService.list({per_page: 15});
+      const response = await bookService.list({per_page: 60, sort: 'newest'});
       setBooks(response.items);
-      setNewArrivals(response.items.slice(0, 5));
+      setNewArrivals(response.items.slice(0, 20));
       setSource('api');
     } catch (requestError: any) {
       try {
         const mock = await import('../data/mockBooks');
         setBooks(mock.MOCK_BOOKS);
-        setNewArrivals(mock.NEW_ARRIVALS);
+        setNewArrivals([...mock.NEW_ARRIVALS, ...mock.MOCK_BOOKS].slice(0, 20));
         setSource('mock');
         setError(null);
       } catch {
