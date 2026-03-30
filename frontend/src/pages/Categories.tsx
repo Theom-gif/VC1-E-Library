@@ -125,6 +125,7 @@ export default function Categories({ onNavigate }: CategoriesProps) {
                 key={book.id} 
                 book={book} 
                 onClick={() => onNavigate('book-details', book)} 
+                onNavigate={onNavigate}
                 onAuthorClick={(author) => onNavigate('author-details', author)}
               />
             ))}

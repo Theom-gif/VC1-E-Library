@@ -6,6 +6,9 @@ import BookCard from '../components/BookCard';
 import AvatarImage from '../components/AvatarImage';
 import {useLibrary} from '../context/LibraryContext';
 import authorService, {AuthorType} from '../service/authorService';
+import {hasAuthenticatedSession, requestAuth} from '../utils/readerUpgrade';
+import authService from '../service/authService';
+import {isFollowingAuthor, setFollowingAuthor} from '../utils/followingAuthors';
 
 type AuthorRef = string | {id?: string; name?: string};
 
@@ -130,11 +133,82 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
 
   const statsBooksCount = authorData?.books_count ?? authorBooks.length;
   const statsRating = toSafeRating(authorData?.avg_rating) || averageRating(authorBooks);
-  const statsFollowers = formatFollowers(authorData?.followers);
+  const statsFollowersValue = authorData?.followers_count ?? authorData?.followers;
+  const statsFollowers = formatFollowers(statsFollowersValue);
   const authorBio =
     pickString(authorData?.bio) ||
     `${displayName} is a featured author in our digital library collection.`;
   const authorPhoto = pickString(authorData?.photo);
+
+  const authorId = pickString(authorData?.id, initialAuthorId);
+  const isFollowing =
+    typeof authorData?.is_following === 'boolean'
+      ? authorData.is_following
+      : authorId
+        ? isFollowingAuthor(authorId)
+        : false;
+  const [isTogglingFollow, setIsTogglingFollow] = React.useState(false);
+
+  const canUseAccountFeatures = () => {
+    try {
+      return Boolean(authService.getToken()) || hasAuthenticatedSession();
+    } catch {
+      return hasAuthenticatedSession();
+    }
+  };
+
+  const toggleFollow = async () => {
+    if (!authorId) return;
+    if (!canUseAccountFeatures()) {
+      requestAuth('feature', {returnTo: {page: 'author-details', data: {id: authorId, name: displayName}}});
+      return;
+    }
+    if (isTogglingFollow) return;
+
+    setIsTogglingFollow(true);
+    try {
+      const result = isFollowing ? await authorService.unfollow(authorId) : await authorService.follow(authorId);
+      const nextFollowers =
+        typeof result.followers_count === 'number'
+          ? result.followers_count
+          : Math.max(0, Math.round(Number(statsFollowersValue ?? 0)) + (result.is_following ? 1 : -1));
+      setAuthorData((prev) =>
+        prev
+          ? {
+              ...prev,
+              is_following: Boolean(result.is_following),
+              followers: nextFollowers,
+              followers_count: nextFollowers,
+            }
+          : prev,
+      );
+      setFollowingAuthor({id: authorId, name: displayName, photo: authorPhoto || undefined, followers_count: nextFollowers}, Boolean(result.is_following));
+    } catch (error: any) {
+      const status = Number(error?.status);
+      if (status === 401 || status === 403) {
+        requestAuth('feature', {returnTo: {page: 'author-details', data: {id: authorId, name: displayName}}});
+        return;
+      }
+      if (status === 404 || status === 405) {
+        const next = !isFollowing;
+        const nextFollowers = Math.max(0, Math.round(Number(statsFollowersValue ?? 0)) + (next ? 1 : -1));
+        setAuthorData((prev) =>
+          prev
+            ? {
+                ...prev,
+                is_following: next,
+                followers: nextFollowers,
+                followers_count: nextFollowers,
+              }
+            : prev,
+        );
+        setFollowingAuthor({id: authorId, name: displayName, photo: authorPhoto || undefined, followers_count: nextFollowers}, next);
+        return;
+      }
+    } finally {
+      setIsTogglingFollow(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-12">
@@ -166,9 +240,24 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
           <div className="flex-1 text-center md:text-left space-y-6">
             <div className="space-y-2">
               <h1 className="text-4xl md:text-5xl font-bold text-text tracking-tight">{displayName}</h1>
-              <p className="text-primary font-bold uppercase tracking-widest text-sm">
-                {isLoadingAuthor ? 'Loading author profile...' : 'Author Profile'}
-              </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center md:justify-start">
+                <p className="text-primary font-bold uppercase tracking-widest text-sm">
+                  {isLoadingAuthor ? 'Loading author profile...' : 'Author Profile'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void toggleFollow()}
+                  disabled={!authorId || isTogglingFollow}
+                  className={`inline-flex items-center justify-center rounded-xl px-5 py-2 text-xs font-black uppercase tracking-widest transition-all ${
+                    isFollowing
+                      ? 'bg-primary text-white hover:bg-primary/90'
+                      : 'border border-primary/30 text-primary hover:bg-primary hover:text-white'
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
+                  title={!authorId ? 'Author id not available' : isFollowing ? 'Unfollow author' : 'Follow author'}
+                >
+                  {isTogglingFollow ? 'Saving...' : isFollowing ? 'Following' : 'Follow'}
+                </button>
+              </div>
             </div>
 
             <p className="text-text-muted leading-relaxed max-w-2xl text-lg">{authorBio}</p>
@@ -208,6 +297,7 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
                 key={book.id}
                 book={book}
                 onClick={() => onNavigate('book-details', book)}
+                onNavigate={onNavigate}
                 onAuthorClick={(nextAuthor) => onNavigate('author-details', nextAuthor)}
               />
             ))}

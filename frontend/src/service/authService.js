@@ -125,7 +125,22 @@ export const authService = {
     }
   },
 
-  me: () => apiClient.get('/api/me'),
+  me: async () => {
+    const paths = ['/api/me', '/api/me/profile', '/api/profile', '/me'];
+    let lastError;
+    for (const path of paths) {
+      try {
+        return await apiClient.get(path);
+      } catch (error) {
+        if (error?.status === 404 || error?.status === 401 || error?.status === 403) {
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError || new Error('Profile endpoint not found');
+  },
 
   getToken: () =>
     localStorage.getItem('token') ||

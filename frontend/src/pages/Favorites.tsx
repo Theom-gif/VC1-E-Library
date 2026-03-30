@@ -97,6 +97,7 @@ export default function Favorites({ onNavigate }: FavoritesProps) {
               key={book.id} 
               book={book} 
               onClick={() => onNavigate('book-details', book)} 
+              onNavigate={onNavigate}
               onAuthorClick={(author) => onNavigate('author-details', author)}
             />
           ))}

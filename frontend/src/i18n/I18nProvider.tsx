@@ -57,6 +57,7 @@ const EN_MESSAGES: I18nMessages = {
   'profile.booksRead': 'Books Read',
   'profile.readingStreak': 'Reading Streak',
   'profile.followers': 'Followers',
+  'profile.following': 'Following',
   'profile.tagline': 'Passionate reader',
   'profile.taglineMemberSince': 'Passionate reader \u2022 Member since {date}',
   'profile.loadingBackendActivity': 'Loading backend activity...',

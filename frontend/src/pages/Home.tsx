@@ -8,7 +8,7 @@ import { useLibrary } from '../context/LibraryContext';
 
 interface HomeProps {
   onNavigate: (page: any, data?: any) => void;
-  onLogin?: (payload: { email: string; password: string; role?: 'user' | 'author' | 'admin' }) => Promise<void>;
+  onLogin?: (payload: { email: string; password: string; role?: 'user' | 'author' | 'admin'; remember?: boolean }) => Promise<void>;
   onRegister?: (payload: {
     firstname: string;
     lastname: string;
@@ -101,6 +101,7 @@ export default function Home({
         email: loginForm.email,
         password: loginForm.password,
         role: 'user',
+        remember: true,
       });
       setLoginForm({ email: '', password: '' });
       onAuthSuccess?.();
@@ -503,6 +504,7 @@ export default function Home({
               key={book.id}
               book={book}
               onClick={() => onNavigate('book-details', book)}
+              onNavigate={onNavigate}
               onAuthorClick={(author) => onNavigate('author-details', author)}
             />
           ))}

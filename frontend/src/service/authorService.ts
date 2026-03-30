@@ -8,6 +8,8 @@ export type AuthorType = {
   bio?: string;
   photo?: string;
   followers?: number;
+  followers_count?: number;
+  is_following?: boolean;
   avg_rating?: number;
   books_count?: number;
 };
@@ -104,6 +106,17 @@ function toNonNegativeNumber(value: unknown): number | undefined {
   return numeric;
 }
 
+function toBoolean(value: unknown): boolean | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const raw = String(value).trim().toLowerCase();
+  if (!raw) return undefined;
+  if (raw === 'true' || raw === '1' || raw === 'yes' || raw === 'y') return true;
+  if (raw === 'false' || raw === '0' || raw === 'no' || raw === 'n') return false;
+  return undefined;
+}
+
 function asAbsoluteAssetUrl(value: unknown): string {
   const raw = pickMediaString(value);
   if (!raw) return '';
@@ -173,6 +186,14 @@ function normalizeAuthor(raw: any, index: number): AuthorType | null {
   if (!name) return null;
 
   const id = pickString(raw?.id, raw?.author_id, raw?.user_id, user?.id, raw?.slug) || `author-${index + 1}`;
+  const followersCount = toNonNegativeNumber(
+    raw?.followers_count ??
+      raw?.followers ??
+      raw?.follower_count ??
+      user?.followers_count ??
+      user?.followers_count,
+  );
+  const isFollowing = toBoolean(raw?.is_following ?? raw?.isFollowing ?? user?.is_following ?? user?.isFollowing);
   return {
     id,
     name,
@@ -199,7 +220,9 @@ function normalizeAuthor(raw: any, index: number): AuthorType | null {
           user?.image,
       ) ||
       undefined,
-    followers: toNonNegativeNumber(raw?.followers ?? raw?.followers_count ?? raw?.follower_count ?? user?.followers_count),
+    followers: followersCount,
+    followers_count: followersCount,
+    is_following: isFollowing,
     avg_rating: toNonNegativeNumber(raw?.avg_rating ?? raw?.average_rating ?? user?.avg_rating),
     books_count: toNonNegativeNumber(raw?.books_count ?? raw?.book_count ?? user?.books_count),
   };
@@ -467,6 +490,64 @@ export const authorService = {
     const result = await authorService.list({q: normalizedName, per_page: 100});
     const exact = result.items.find((item) => item.name.trim().toLowerCase() === normalizedName.toLowerCase());
     return exact || result.items[0] || null;
+  },
+
+  listFollowing: async (params?: {page?: number; per_page?: number}) => {
+    const payload = (await apiClient.get(
+      withQuery('/api/me/following/authors', {
+        page: params?.page,
+        per_page: params?.per_page,
+      }),
+      {headers: {Accept: 'application/json'}},
+    )) as ApiEnvelope<any>;
+
+    const rawList = extractRawAuthorList(payload);
+    const items = dedupeAuthors(
+      rawList
+        .map((item, index) => normalizeAuthor(item, index))
+        .filter(Boolean) as AuthorType[],
+    ).map((item) => ({...item, is_following: true}));
+
+    return {
+      items,
+      meta: extractListMeta(payload),
+      message: payload?.message,
+      success: payload?.success,
+    };
+  },
+
+  follow: async (authorId: string) => {
+    const id = pickString(authorId);
+    if (!id) throw new Error('authorId is required');
+    const payload = (await apiClient.post(`/api/authors/${encodeURIComponent(id)}/follow`, null, {
+      headers: {Accept: 'application/json'},
+    })) as ApiEnvelope<any>;
+    const data = (payload as any)?.data ?? payload;
+    const followersCount = toNonNegativeNumber(data?.followers_count ?? data?.followers ?? data?.follower_count);
+    const isFollowing = toBoolean(data?.is_following ?? data?.isFollowing ?? true);
+    return {
+      author_id: pickString(data?.author_id, data?.id, id) || id,
+      is_following: isFollowing ?? true,
+      followers_count: followersCount,
+      raw: payload,
+    };
+  },
+
+  unfollow: async (authorId: string) => {
+    const id = pickString(authorId);
+    if (!id) throw new Error('authorId is required');
+    const payload = (await apiClient.delete(`/api/authors/${encodeURIComponent(id)}/follow`, {
+      headers: {Accept: 'application/json'},
+    })) as ApiEnvelope<any>;
+    const data = (payload as any)?.data ?? payload;
+    const followersCount = toNonNegativeNumber(data?.followers_count ?? data?.followers ?? data?.follower_count);
+    const isFollowing = toBoolean(data?.is_following ?? data?.isFollowing ?? false);
+    return {
+      author_id: pickString(data?.author_id, data?.id, id) || id,
+      is_following: isFollowing ?? false,
+      followers_count: followersCount,
+      raw: payload,
+    };
   },
 };
 

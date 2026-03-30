@@ -49,16 +49,17 @@ export default function SearchPage({ query, results, onNavigate }: SearchPagePro
       ) : null}
 
       {results.length > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-          {results.map((book) => (
-            <BookCard
-              key={book.id}
-              book={book}
-              onClick={() => onNavigate('book-details', book)}
-              onAuthorClick={(author) => onNavigate('author-details', author)}
-            />
-          ))}
-        </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+            {results.map((book) => (
+              <BookCard
+                key={book.id}
+                book={book}
+                onClick={() => onNavigate('book-details', book)}
+                onNavigate={onNavigate}
+                onAuthorClick={(author) => onNavigate('author-details', author)}
+              />
+            ))}
+          </div>
       ) : null}
     </div>
   );

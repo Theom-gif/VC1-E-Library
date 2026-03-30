@@ -61,7 +61,7 @@ type AuthenticatedUser = {
 type AppProps = {
   authUser: AuthenticatedUser;
   onLogout: () => void;
-  onLogin: (payload: {email: string; password: string; role?: AuthenticatedUser['role']}) => Promise<void>;
+  onLogin: (payload: {email: string; password: string; role?: AuthenticatedUser['role']; remember?: boolean}) => Promise<void>;
   onRegister: (payload: {
     firstname: string;
     lastname: string;
@@ -76,6 +76,7 @@ const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
 const THEME_MODE_KEY = 'elibrary_theme_mode';
 const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
 const DEFAULT_PROFILE_PHOTO = defaultAvatarUrl;
+const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
 
 function PageFallback() {
   return (
@@ -712,8 +713,8 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
               className="elibrary-logo shrink-0 flex items-center gap-2 text-primary cursor-pointer"
               onClick={() => navigateTo('home')}
             >
-              <Icons.BookOpen className="size-8" />
-              <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">គម្ពី-ELibrary</h2>
+              <img src="/favicon.svg" alt="" className="size-8" />
+              <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">{APP_NAME}</h2>
             </div>
             <nav className="hidden xl:flex items-center gap-5">
               <NavLink active={currentPage === 'home'} onClick={() => navigateTo('home')}>Home</NavLink>
@@ -940,8 +941,8 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
         <div className="mx-auto max-w-7xl px-6 lg:px-20 grid grid-cols-1 md:grid-cols-4 gap-12">
           <div className="col-span-1 md:col-span-1">
             <div className="text-primary flex items-center gap-2 mb-4">
-              <Icons.BookOpen className="size-6" />
-              <h2 className="text-lg font-bold">គម្ពី-ELibrary</h2>
+              <img src="/favicon.svg" alt="" className="size-6" />
+              <h2 className="text-lg font-bold">{APP_NAME}</h2>
             </div>
             <p className="text-sm text-text-muted leading-relaxed">
               Making knowledge accessible to everyone, anywhere in the world. Access thousands of premium titles at your fingertips.
@@ -981,7 +982,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
           </div>
         </div>
         <div className="mx-auto max-w-7xl px-6 lg:px-20 pt-8 mt-8 border-t border-border flex flex-col sm:flex-row justify-between items-center gap-4">
-          <p className="text-xs text-text-muted">© 2024 គម្ពី-ELibrary Inc. All rights reserved.</p>
+          <p className="text-xs text-text-muted">© 2024 {APP_NAME} Inc. All rights reserved.</p>
           <div className="flex gap-6">
             <Icons.Globe className="size-5 text-text-muted hover:text-primary cursor-pointer transition-colors" />
             <Icons.User className="size-5 text-text-muted hover:text-primary cursor-pointer transition-colors" />

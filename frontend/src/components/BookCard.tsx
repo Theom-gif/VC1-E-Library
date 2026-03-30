@@ -9,11 +9,12 @@ import CoverImage from './CoverImage';
 interface BookCardProps {
   book: BookType;
   onClick: () => void;
+  onNavigate?: (page: any, data?: any) => void;
   onAuthorClick?: (author: string) => void;
   key?: any;
 }
 
-export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps) {
+export default function BookCard({book, onClick, onNavigate, onAuthorClick}: BookCardProps) {
   const {startDownload, resume, openOffline, isDownloaded, activeById} = useDownloads();
   const {isFavorite, toggle} = useFavorites();
   const downloaded = isDownloaded(String(book.id));
@@ -43,9 +44,11 @@ export default function BookCard({ book, onClick, onAuthorClick }: BookCardProps
               }
               if (active?.status === 'paused') {
                 void resume(book);
+                onNavigate?.('downloads');
                 return;
               }
               void startDownload(book);
+              onNavigate?.('downloads');
             }}
             title={downloaded ? 'Open offline' : active?.status === 'downloading' ? `Downloading ${active.progress}%` : 'Download for offline reading'}
           >

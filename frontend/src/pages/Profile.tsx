@@ -5,8 +5,12 @@ import {useLibrary} from '../context/LibraryContext';
 import CoverImage from '../components/CoverImage';
 import AvatarImage from '../components/AvatarImage';
 import profileService, {type ReadingActivityBucket, type ReadingActivityRange} from '../service/profileService';
+import authorService from '../service/authorService';
 import ProfileForm from '../components/profile/ProfileForm';
 import {useI18n} from '../i18n/I18nProvider';
+import authService from '../service/authService';
+import {hasAuthenticatedSession} from '../utils/readerUpgrade';
+import {FOLLOWING_AUTHORS_EVENT, listFollowingAuthorsFromCache} from '../utils/followingAuthors';
 
 interface ProfileProps {
   user: {name: string; photo: string; membership: string; memberSince?: string};
@@ -80,6 +84,78 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
     booksReadCount: 0,
     readingDaysCount: 0,
   });
+
+  const [authTick, setAuthTick] = React.useState(0);
+  const [followingCount, setFollowingCount] = React.useState<number>(() => listFollowingAuthorsFromCache().length);
+  const [followingLoading, setFollowingLoading] = React.useState(false);
+
+  const canUseAccountFeatures = React.useCallback(() => {
+    try {
+      return Boolean(authService.getToken()) || hasAuthenticatedSession();
+    } catch {
+      return hasAuthenticatedSession();
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const handleTokenChanged = () => setAuthTick((v) => v + 1);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('elibrary-token-changed', handleTokenChanged as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('elibrary-token-changed', handleTokenChanged as EventListener);
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const refreshFromCache = () => setFollowingCount(listFollowingAuthorsFromCache().length);
+    if (typeof window !== 'undefined') {
+      window.addEventListener(FOLLOWING_AUTHORS_EVENT, refreshFromCache as EventListener);
+      window.addEventListener('storage', refreshFromCache as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener(FOLLOWING_AUTHORS_EVENT, refreshFromCache as EventListener);
+        window.removeEventListener('storage', refreshFromCache as EventListener);
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let alive = true;
+    const cachedCount = listFollowingAuthorsFromCache().length;
+    setFollowingCount(cachedCount);
+
+    if (!canUseAccountFeatures()) {
+      setFollowingLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
+
+    setFollowingLoading(true);
+    void authorService
+      .listFollowing({per_page: 200})
+      .then((response) => {
+        if (!alive) return;
+        const total = Number(response?.meta?.total);
+        const count = Number.isFinite(total) && total >= 0 ? total : Array.isArray(response?.items) ? response.items.length : cachedCount;
+        setFollowingCount(count);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setFollowingCount(listFollowingAuthorsFromCache().length);
+      })
+      .finally(() => {
+        if (alive) setFollowingLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [authTick, canUseAccountFeatures]);
 
   React.useEffect(() => {
     let alive = true;
@@ -232,7 +308,11 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
                 value={`${profileStats.readingDaysCount || readingActivity.reduce((count, item) => (item.minutes > 0 ? count + 1 : count), 0)} Days`}
                 icon={<Icons.Flame className="size-3" />}
               />
-              <StatBadge label={t('profile.followers')} value="842" icon={<Icons.User className="size-3" />} />
+              <StatBadge
+                label={t('profile.following')}
+                value={followingLoading ? '...' : String(followingCount)}
+                icon={<Icons.User className="size-3" />}
+              />
             </div>
           </div>
           <div className="flex gap-3">

@@ -17,7 +17,7 @@ type AuthGateProps = {
   children: (props: {
     user: SessionUser;
     logout: () => void;
-    login: (payload: {email: string; password: string; role?: RoleName}) => Promise<void>;
+    login: (payload: {email: string; password: string; role?: RoleName; remember?: boolean}) => Promise<void>;
     register: (payload: {
       firstname: string;
       lastname: string;
@@ -32,6 +32,7 @@ type AuthGateProps = {
 const SESSION_KEY = 'elibrary_session';
 const LOGOUT_TOKEN_KEY = 'elibrary_last_token';
 const FORCE_LOGIN_KEY = 'elibrary_force_login';
+const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
 const AUTO_LOGIN_BYPASS = String((import.meta as any)?.env?.VITE_AUTO_LOGIN_BYPASS || '').trim().toLowerCase() === 'true';
 const ALLOW_GUEST = String((import.meta as any)?.env?.VITE_ALLOW_GUEST ?? 'true').trim().toLowerCase() !== 'false';
 function safeLocalStorageGet(key: string): string | null {
@@ -222,16 +223,24 @@ function toSessionUser(
   };
 }
 
-async function loginWithFallbacks(payload: {email: string; password: string; role?: RoleName}) {
+async function loginWithFallbacks(payload: {email: string; password: string; role?: RoleName; remember?: boolean}) {
+  const remember = payload.remember !== false;
   const attempts = [
     ...(payload.role
       ? [
-          {email: payload.email, password: payload.password, role: payload.role, role_id: roleIdFromRole(payload.role)},
-          {email: payload.email, password: payload.password, role: titleRole(payload.role)},
-          {email: payload.email, password: payload.password, role_id: roleIdFromRole(payload.role)},
+          {
+            email: payload.email,
+            password: payload.password,
+            role: payload.role,
+            role_id: roleIdFromRole(payload.role),
+            remember,
+            remember_me: remember,
+          },
+          {email: payload.email, password: payload.password, role: titleRole(payload.role), remember, remember_me: remember},
+          {email: payload.email, password: payload.password, role_id: roleIdFromRole(payload.role), remember, remember_me: remember},
         ]
       : []),
-    {email: payload.email, password: payload.password},
+    {email: payload.email, password: payload.password, remember, remember_me: remember},
   ];
   let lastRoleError: any = null;
   for (const attempt of attempts) {
@@ -309,7 +318,7 @@ export default function AuthGate({children}: AuthGateProps) {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [loginForm, setLoginForm] = useState({email: '', password: '', remember: false});
+  const [loginForm, setLoginForm] = useState({email: '', password: '', remember: true});
   const [registerForm, setRegisterForm] = useState({
     firstname: '',
     lastname: '',
@@ -342,6 +351,7 @@ export default function AuthGate({children}: AuthGateProps) {
 
   useEffect(() => {
     if (!sessionUser || isGuestUser(sessionUser)) return;
+    const tokenAtBoot = authService.getToken();
     let alive = true;
 
     void authService
@@ -355,6 +365,9 @@ export default function AuthGate({children}: AuthGateProps) {
       .catch((requestError: any) => {
         if (!alive) return;
         if (Number(requestError?.status) !== 401) return;
+        // If we don't have a stored token, this 401 may be caused by missing credentials
+        // (e.g. cookie-based auth on a different origin). Don't force logout on refresh.
+        if (!tokenAtBoot) return;
 
         authService.clearToken();
         clearSession();
@@ -377,21 +390,24 @@ export default function AuthGate({children}: AuthGateProps) {
     };
   }, [sessionUser]);
 
-  const login = async (payload: {email: string; password: string; role?: RoleName}) => {
+  const login = async (payload: {email: string; password: string; role?: RoleName; remember?: boolean}) => {
+    const remember = payload.remember !== false;
     const response = await loginWithFallbacks({
       email: payload.email.trim().toLowerCase(),
       password: payload.password,
       role: payload.role,
+      remember,
     });
+    let meResponse: any = null;
     try {
-      await authService.me();
+      meResponse = await authService.me();
     } catch (requestError: any) {
       if (Number(requestError?.status) === 401) {
         throw new Error('Login failed. Please check your email/password and try again.');
       }
     }
     const previousMemberSince = readSession()?.memberSince;
-    const user = toSessionUser(response, payload.email, payload.role ?? 'user', previousMemberSince);
+    const user = toSessionUser(meResponse || response, payload.email, payload.role ?? 'user', previousMemberSince);
     saveSession(user);
     setAuthRequired(false);
     setForceLogin(false);
@@ -416,17 +432,19 @@ export default function AuthGate({children}: AuthGateProps) {
         email: payload.email.trim().toLowerCase(),
         password: payload.password,
         role: payload.role,
+        remember: true,
       });
       sessionSource = loginResponse;
     }
+    let meResponse: any = null;
     try {
-      await authService.me();
+      meResponse = await authService.me();
     } catch (requestError: any) {
       if (Number(requestError?.status) === 401) {
         throw new Error('Registration failed. Please try again.');
       }
     }
-    const user = toSessionUser(sessionSource, payload.email, payload.role, new Date().toISOString());
+    const user = toSessionUser(meResponse || sessionSource, payload.email, payload.role, new Date().toISOString());
     saveSession(user);
     setAuthRequired(false);
     setForceLogin(false);
@@ -445,6 +463,7 @@ export default function AuthGate({children}: AuthGateProps) {
         email: loginForm.email,
         password: loginForm.password,
         role: 'user',
+        remember: loginForm.remember,
       });
     } catch (requestError: any) {
       setError(extractErrorText(requestError, 'Unable to login. Please check your credentials.'));
@@ -498,10 +517,8 @@ export default function AuthGate({children}: AuthGateProps) {
       <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f7fcfd,_#eef6f7_55%,_#e8f0f2)] dark:bg-[#0f1b1f] flex flex-col items-center justify-center p-4 text-slate-900 dark:text-[#f8fafc]">
         <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#5da7b3] shadow-sm">
-              <BookOpen size={18} className="text-white" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">គម្ពី-ELibrary</span>
+            <img src="/favicon.svg" alt="" className="h-10 w-10" />
+            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">{APP_NAME}</span>
           </div>
           <button className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:text-slate-900 dark:border-white/10 dark:bg-[#1d3438] dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">
             Support
@@ -536,10 +553,8 @@ export default function AuthGate({children}: AuthGateProps) {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f7fcfd,_#eef6f7_55%,_#e8f0f2)] dark:bg-[#0f1b1f] flex flex-col items-center justify-center p-4 text-slate-900 dark:text-[#f8fafc]">
       <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#5da7b3] shadow-sm">
-            <BookOpen size={18} className="text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">គម្ពី-ELibrary</span>
+          <img src="/favicon.svg" alt="" className="h-10 w-10" />
+          <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">{APP_NAME}</span>
         </div>
         <button className="text-sm font-medium text-slate-500 hover:text-slate-900 dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">Help Center</button>
       </header>

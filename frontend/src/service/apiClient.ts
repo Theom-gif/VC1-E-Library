@@ -190,6 +190,7 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
       response = await fetch(url, {
         method,
         headers,
+        credentials: 'include',
         ...(hasBody
           ? {
               body: isBinaryBody
@@ -201,13 +202,14 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
           : {}),
         signal: combinedSignal,
         ...restOptions,
-      });
+          });
     } catch (fetchError: any) {
       if (shouldFallback) {
         try {
           response = await fetch(fallbackUrl, {
             method,
             headers,
+            credentials: 'include',
             ...(hasBody
               ? {
                   body: isBinaryBody
@@ -265,6 +267,7 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
         const retryResponse = await fetch(fallbackUrl, {
           method,
           headers,
+          credentials: 'include',
           ...(hasBody
             ? {
                 body: isBinaryBody

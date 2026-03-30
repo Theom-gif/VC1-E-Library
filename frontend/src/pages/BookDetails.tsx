@@ -7,8 +7,10 @@ import {useFavorites} from '../context/FavoritesContext';
 import bookService from '../service/bookService';
 import ratingService, {type BookRatingsSummary} from '../service/ratingService';
 import reviewService from '../service/reviewService';
+import authorService from '../service/authorService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
+import {isFollowingAuthor, setFollowingAuthor} from '../utils/followingAuthors';
 import {
   PENDING_BOOK_RATING_KEY,
   hasAuthenticatedSession,
@@ -110,6 +112,29 @@ function canUseProtectedFeatures(): boolean {
 
 const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
 const SESSION_KEY = 'elibrary_session';
+const ONE_TIME_RATINGS_KEY = 'elibrary_one_time_ratings_v1';
+const MAX_RATINGS_PER_USER = 300;
+const authorPhotoCache = new Map<string, string>();
+
+type StoredRatingsByUser = Record<string, Record<string, number>>;
+
+function safeLocalStorageGet(key: string): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key: string, value: string) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
 
 function safeJsonParse<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
@@ -127,6 +152,78 @@ function readCurrentProfile(): {name: string; photo: string} {
     name: pickString(cache?.name, session?.name, 'Library User'),
     photo: pickString(cache?.photo, ''),
   };
+}
+
+function readSessionUserId(): string {
+  const session = safeJsonParse<any>(safeLocalStorageGet(SESSION_KEY), {});
+  const id = String(session?.id || '').trim();
+  return id && id !== 'guest' ? id : '';
+}
+
+function fallbackProfilePhoto(seed: string, size = 100): string {
+  const raw = String(seed || '').trim() || 'user';
+  const safeSize = Math.max(40, Math.min(256, Math.round(Number(size) || 100)));
+  // "Real" placeholder portraits (stable by seed).
+  return `https://i.pravatar.cc/${safeSize}?u=${encodeURIComponent(raw)}`;
+}
+
+function stableHash(value: string): string {
+  // FNV-1a 32-bit (good enough for local storage keys).
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+  }
+  return hash.toString(16);
+}
+
+function getRatingUserKey(): string {
+  const id = readSessionUserId();
+  if (id) return `u_${id}`;
+  const token = String(readToken() || '').trim();
+  if (token) return `tok_${stableHash(token)}`;
+  return 'guest';
+}
+
+function readStoredRatings(): StoredRatingsByUser {
+  const raw = safeLocalStorageGet(ONE_TIME_RATINGS_KEY);
+  const parsed = safeJsonParse<any>(raw, {});
+  return parsed && typeof parsed === 'object' ? (parsed as StoredRatingsByUser) : {};
+}
+
+function writeStoredRatings(next: StoredRatingsByUser) {
+  safeLocalStorageSet(ONE_TIME_RATINGS_KEY, JSON.stringify(next));
+}
+
+function getStoredBookRating(userKey: string, bookId: string): number {
+  const normalizedUserKey = String(userKey || '').trim();
+  const normalizedBookId = normalizeBackendBookId(bookId);
+  if (!normalizedUserKey || !normalizedBookId) return 0;
+  const store = readStoredRatings();
+  const rating = Number(store?.[normalizedUserKey]?.[normalizedBookId] || 0);
+  if (rating >= 1 && rating <= 5) return Math.round(rating);
+  return 0;
+}
+
+function setStoredBookRating(userKey: string, bookId: string, rating: number) {
+  const normalizedUserKey = String(userKey || '').trim();
+  const normalizedBookId = normalizeBackendBookId(bookId);
+  const nextRating = Math.max(1, Math.min(5, Math.round(Number(rating) || 0)));
+  if (!normalizedUserKey || !normalizedBookId || !nextRating) return;
+
+  const store = readStoredRatings();
+  const perUser = store?.[normalizedUserKey] && typeof store[normalizedUserKey] === 'object' ? store[normalizedUserKey] : {};
+  perUser[normalizedBookId] = nextRating;
+
+  const keys = Object.keys(perUser);
+  if (keys.length > MAX_RATINGS_PER_USER) {
+    for (const k of keys.slice(0, keys.length - MAX_RATINGS_PER_USER)) {
+      delete perUser[k];
+    }
+  }
+
+  store[normalizedUserKey] = perUser;
+  writeStoredRatings(store);
 }
 
 function asAbsoluteAssetUrl(value: string): string {
@@ -220,7 +317,10 @@ function normalizeCommentReply(raw: any, fallbackIndex: number): CommentReply {
   const createdAt = derivedCreatedAt || createdAtRaw;
   const displayName = pickString(user?.name, derivedName, source?.user_name, source?.username, profile.name, 'Library User');
   const avatarFallback = displayName.trim().toLowerCase() === profile.name.trim().toLowerCase() ? profile.photo : '';
-  const avatar = asAbsoluteAssetUrl(avatarRaw) || asAbsoluteAssetUrl(avatarFallback) || 'https://picsum.photos/seed/user/100/100';
+  const avatar =
+    asAbsoluteAssetUrl(avatarRaw) ||
+    asAbsoluteAssetUrl(avatarFallback) ||
+    fallbackProfilePhoto(userId || displayName, 100);
 
   return {
     id,
@@ -263,7 +363,10 @@ function normalizeComment(raw: any, fallbackIndex: number): Comment {
   const rating = pickNumber(source?.rating, source?.stars, source?.score);
   const displayName = pickString(user?.name, derivedName, source?.user_name, source?.username, profile.name, 'Library User');
   const avatarFallback = displayName.trim().toLowerCase() === profile.name.trim().toLowerCase() ? profile.photo : '';
-  const avatar = asAbsoluteAssetUrl(avatarRaw) || asAbsoluteAssetUrl(avatarFallback) || 'https://picsum.photos/seed/user/100/100';
+  const avatar =
+    asAbsoluteAssetUrl(avatarRaw) ||
+    asAbsoluteAssetUrl(avatarFallback) ||
+    fallbackProfilePhoto(userId || displayName, 100);
   const nestedReplies = Array.isArray(source?.replies)
     ? source.replies
     : pickArray(source?.replies?.data, source?.replies_data, source?.children, source?.children?.data);
@@ -334,13 +437,129 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const {isFavorite, toggle} = useFavorites();
   const currentBook = book ?? books[0];
   if (!currentBook) return null;
+  const normalizedBookId = normalizeBackendBookId(currentBook.id);
   const currentProfile = readCurrentProfile();
+  const [authorPhoto, setAuthorPhoto] = React.useState<string>('');
+  const [authorInfo, setAuthorInfo] = React.useState<{id?: string; name?: string; photo?: string; followers_count?: number; is_following?: boolean} | null>(null);
+  const [isTogglingFollow, setIsTogglingFollow] = React.useState(false);
   const [nowTick, setNowTick] = React.useState(() => Date.now());
 
   React.useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
+
+  React.useEffect(() => {
+    const authorName = pickString(currentBook.author);
+    if (!authorName) {
+      setAuthorPhoto('');
+      setAuthorInfo(null);
+      return;
+    }
+    const cached = authorPhotoCache.get(authorName);
+    if (cached) {
+      setAuthorPhoto(cached);
+      setAuthorInfo((prev) => prev || {name: authorName, photo: cached});
+      return;
+    }
+
+    let alive = true;
+    void authorService
+      .getByName(authorName)
+      .then((author) => {
+        if (!alive) return;
+        const next = String(author?.photo || '').trim() || fallbackProfilePhoto(authorName, 100);
+        authorPhotoCache.set(authorName, next);
+        setAuthorPhoto(next);
+        setAuthorInfo(
+          author
+            ? {
+                id: author.id,
+                name: author.name,
+                photo: next,
+                followers_count: author.followers_count ?? author.followers,
+                is_following:
+                  typeof author.is_following === 'boolean'
+                    ? author.is_following
+                    : author.id
+                      ? isFollowingAuthor(author.id)
+                      : undefined,
+              }
+            : {name: authorName, photo: next},
+        );
+      })
+      .catch(() => {
+        if (!alive) return;
+        const next = fallbackProfilePhoto(authorName, 100);
+        authorPhotoCache.set(authorName, next);
+        setAuthorPhoto(next);
+        setAuthorInfo((prev) => prev || {name: authorName, photo: next});
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [currentBook.author]);
+
+  const isFollowing =
+    typeof authorInfo?.is_following === 'boolean'
+      ? authorInfo.is_following
+      : authorInfo?.id
+        ? isFollowingAuthor(authorInfo.id)
+        : false;
+
+  const toggleFollow = async () => {
+    const authorId = String(authorInfo?.id || '').trim();
+    const authorName = pickString(authorInfo?.name, currentBook.author);
+    if (!authorId) return;
+
+    if (!canUseProtectedFeatures()) {
+      requestAuth('feature', {returnTo: {page: 'book-details', data: currentBook}});
+      return;
+    }
+
+    if (isTogglingFollow) return;
+    setIsTogglingFollow(true);
+    try {
+      const result = isFollowing ? await authorService.unfollow(authorId) : await authorService.follow(authorId);
+      const nextFollowers =
+        typeof result.followers_count === 'number'
+          ? result.followers_count
+          : Math.max(0, Math.round(Number(authorInfo?.followers_count ?? 0)) + (result.is_following ? 1 : -1));
+      setAuthorInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              is_following: Boolean(result.is_following),
+              followers_count: nextFollowers,
+            }
+          : prev,
+      );
+      setFollowingAuthor(
+        {id: authorId, name: authorName, photo: pickString(authorInfo?.photo, authorPhoto), followers_count: nextFollowers},
+        Boolean(result.is_following),
+      );
+    } catch (error: any) {
+      const status = Number(error?.status);
+      if (status === 401 || status === 403) {
+        requestAuth('feature', {returnTo: {page: 'book-details', data: currentBook}});
+        return;
+      }
+      if (status === 404 || status === 405) {
+        const next = !isFollowing;
+        const nextFollowers = Math.max(0, Math.round(Number(authorInfo?.followers_count ?? 0)) + (next ? 1 : -1));
+        setAuthorInfo((prev) => (prev ? {...prev, is_following: next, followers_count: nextFollowers} : prev));
+        setFollowingAuthor(
+          {id: authorId, name: authorName, photo: pickString(authorInfo?.photo, authorPhoto), followers_count: nextFollowers},
+          next,
+        );
+        return;
+      }
+      // Ignore other errors; keep UI state.
+    } finally {
+      setIsTogglingFollow(false);
+    }
+  };
 
   const active = activeById(String(currentBook.id));
   const downloaded = isDownloaded(String(currentBook.id));
@@ -351,6 +570,10 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const [ratings, setRatings] = React.useState<BookRatingsSummary>(() => fallbackRatingsSummary(currentBook));
   const [ratingError, setRatingError] = React.useState('');
   const [selectedRating, setSelectedRating] = React.useState<number>(0);
+  const ratingUserKey = getRatingUserKey();
+  const storedUserRating = getStoredBookRating(ratingUserKey, normalizedBookId);
+  const ratingLockedValue = Number(ratings.user_rating || 0) || storedUserRating || 0;
+  const isRatingLocked = Boolean(ratingLockedValue);
   const [isLoadingRatings, setIsLoadingRatings] = React.useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = React.useState(false);
   const [isLoadingComments, setIsLoadingComments] = React.useState(false);
@@ -570,7 +793,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
         const localReply: CommentReply = {
           id: `reply-local-${Date.now()}-${Math.round(Math.random() * 10000)}`,
           user: currentProfile.name || 'Library User',
-          avatar: asAbsoluteAssetUrl(currentProfile.photo) || 'https://picsum.photos/seed/user/100/100',
+          avatar: asAbsoluteAssetUrl(currentProfile.photo) || fallbackProfilePhoto(currentProfile.name || 'user', 100),
           text: nextText,
           time: 'Just now',
           createdAt: new Date().toISOString(),
@@ -597,11 +820,14 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   };
 
   React.useEffect(() => {
-    const normalizedBookId = normalizeBackendBookId(currentBook.id);
     let alive = true;
 
-    setRatings(fallbackRatingsSummary(currentBook));
-    setSelectedRating(0);
+    const userKey = getRatingUserKey();
+    const stored = getStoredBookRating(userKey, normalizedBookId);
+    const fallback = fallbackRatingsSummary(currentBook);
+
+    setRatings({...fallback, user_rating: stored ? stored : null});
+    setSelectedRating(stored || 0);
     setRatingError('');
     setIsLoadingRatings(true);
 
@@ -609,12 +835,19 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       .getForBook(normalizedBookId)
       .then((summary) => {
         if (!alive) return;
-        setRatings(summary);
-        setSelectedRating(summary.user_rating || 0);
+        const merged: BookRatingsSummary = {
+          ...summary,
+          user_rating: summary.user_rating || stored || null,
+        };
+        setRatings(merged);
+        setSelectedRating(merged.user_rating || 0);
+        if (merged.user_rating) {
+          setStoredBookRating(userKey, normalizedBookId, merged.user_rating);
+        }
       })
       .catch((error: any) => {
         if (!alive) return;
-        setRatings(fallbackRatingsSummary(currentBook));
+        setRatings({...fallbackRatingsSummary(currentBook), user_rating: stored ? stored : null});
         if (Number(error?.status) !== 404) {
           setRatingError(error?.data?.message || error?.message || 'Unable to load rating information.');
         }
@@ -629,16 +862,20 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   }, [currentBook]);
 
   React.useEffect(() => {
-    const normalizedBookId = normalizeBackendBookId(currentBook.id);
     const pending = readPendingBookRating();
     if (!pending || pending.bookId !== normalizedBookId) return;
     if (!canUseProtectedFeatures()) return;
     if (isSubmittingRating) return;
+    if (getStoredBookRating(getRatingUserKey(), normalizedBookId) || Number(ratings.user_rating || 0) > 0) {
+      clearPendingBookRating();
+      setRatingError('You already rated this book.');
+      return;
+    }
 
     clearPendingBookRating();
     setSelectedRating(pending.rating);
     void submitRating(pending.rating);
-  }, [currentBook.id, isSubmittingRating]);
+  }, [currentBook.id, isSubmittingRating, ratings.user_rating]);
 
   React.useEffect(() => {
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
@@ -779,9 +1016,15 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   };
 
   const submitRating = async (nextRating: number) => {
-    const normalizedBookId = normalizeBackendBookId(currentBook.id);
     if (!nextRating) {
       setRatingError('Select a star rating first.');
+      return;
+    }
+    const userKey = getRatingUserKey();
+    const existing = getStoredBookRating(userKey, normalizedBookId) || Number(ratings.user_rating || 0);
+    if (existing) {
+      setSelectedRating(existing);
+      setRatingError('You already rated this book.');
       return;
     }
     if (!canUseProtectedFeatures()) {
@@ -800,19 +1043,38 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     try {
       const submitted = await ratingService.submitForBook(normalizedBookId, {rating: nextRating});
       clearPendingBookRating();
+      const lockedValue = submitted.user_rating || nextRating;
+      setStoredBookRating(userKey, normalizedBookId, lockedValue);
       setRatings((prev) => ({
         ...prev,
         ...submitted,
-        user_rating: submitted.user_rating || nextRating,
+        user_rating: lockedValue,
       }));
 
       const refreshed = await ratingService.getForBook(normalizedBookId);
-      setRatings(refreshed);
-      setSelectedRating(refreshed.user_rating || nextRating);
+      const merged: BookRatingsSummary = {
+        ...refreshed,
+        user_rating: refreshed.user_rating || lockedValue || null,
+      };
+      setRatings(merged);
+      setSelectedRating(merged.user_rating || lockedValue);
     } catch (error: any) {
+      const status = Number(error?.status);
+      const rawMessage = String(error?.data?.message || error?.message || '').toLowerCase();
+      const looksLikeAlreadyRated =
+        status === 409 ||
+        rawMessage.includes('already rated') ||
+        rawMessage.includes('already') && rawMessage.includes('rated') ||
+        rawMessage.includes('duplicate') && rawMessage.includes('rating');
+      if (looksLikeAlreadyRated) {
+        setStoredBookRating(userKey, normalizedBookId, nextRating);
+        setRatings((prev) => ({...prev, user_rating: prev.user_rating || nextRating}));
+        setSelectedRating((prev) => prev || nextRating);
+        setRatingError('You already rated this book.');
+        return;
+      }
       if (Number(error?.status) === 401) {
         savePendingBookRating(normalizedBookId, nextRating);
-        const rawMessage = String(error?.data?.message || error?.message || '').toLowerCase();
         const likelyExpiredSession =
           !readToken() ||
           rawMessage.includes('unauthenticated') ||
@@ -844,6 +1106,11 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   };
 
   const handleQuickRate = async (star: number) => {
+    if (isRatingLocked) {
+      setSelectedRating(ratingLockedValue);
+      setRatingError('You already rated this book.');
+      return;
+    }
     setSelectedRating(star);
     setRatingError('');
     if (!canUseProtectedFeatures()) {
@@ -996,15 +1263,30 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                 onClick={() => onNavigate('author-details', currentBook.author)}
               >
                 <div className="size-10 rounded-full bg-surface border border-border overflow-hidden group-hover/author:border-primary transition-colors">
-                  <img src={`https://picsum.photos/seed/${currentBook.author}/100/100`} alt={currentBook.author} className="w-full h-full object-cover" />
+                  <img
+                    src={authorPhoto || fallbackProfilePhoto(currentBook.author, 100)}
+                    alt={currentBook.author}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
                 </div>
                 <div>
                   <p className="text-xs font-bold text-text-muted uppercase tracking-tighter">Author</p>
                   <p className="text-sm font-bold text-text group-hover/author:text-primary transition-colors">{currentBook.author}</p>
                 </div>
               </div>
-              <button type="button" className="px-4 py-1.5 rounded-lg border border-primary/30 text-primary text-[11px] font-bold uppercase tracking-widest hover:bg-primary hover:text-white transition-all">
-                Follow
+              <button
+                type="button"
+                onClick={() => void toggleFollow()}
+                disabled={!authorInfo?.id || isTogglingFollow}
+                className={`px-4 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-widest transition-all ${
+                  isFollowing
+                    ? 'border-primary/30 bg-primary text-white hover:bg-primary/90'
+                    : 'border-primary/30 text-primary hover:bg-primary hover:text-white'
+                } disabled:opacity-60 disabled:cursor-not-allowed`}
+                title={!authorInfo?.id ? 'Author info not available' : isFollowing ? 'Unfollow author' : 'Follow author'}
+              >
+                {isTogglingFollow ? 'Saving...' : isFollowing ? 'Following' : 'Follow'}
               </button>
               <div className="h-8 w-px bg-border" />
               <div className="flex items-center gap-2">
@@ -1014,7 +1296,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       key={s}
                       type="button"
                       onClick={() => void handleQuickRate(s)}
-                      disabled={isSubmittingRating}
+                      disabled={isSubmittingRating || isRatingLocked}
                       className="transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60"
                       aria-label={`Rate this book ${s} star${s === 1 ? '' : 's'}`}
                       title={`Rate ${s} star${s === 1 ? '' : 's'}`}
@@ -1072,7 +1354,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                   <button
                     key={star}
                     type="button"
+                    disabled={isSubmittingRating || isLoadingRatings || isRatingLocked}
                     onClick={() => {
+                      if (isRatingLocked) return;
                       setSelectedRating(star);
                       setRatingError('');
                       void handleQuickRate(star);
@@ -1115,13 +1399,13 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               <button
                 type="button"
                 onClick={() => void handleSubmitRating()}
-                disabled={isSubmittingRating || isLoadingRatings}
+                disabled={isSubmittingRating || isLoadingRatings || isRatingLocked}
                 className="rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white transition-all hover:bg-primary/90 disabled:opacity-60"
               >
-                {isSubmittingRating ? 'Submitting...' : ratings.user_rating ? 'Update Rating' : 'Submit Rating'}
+                {isSubmittingRating ? 'Submitting...' : isRatingLocked ? 'Rated' : 'Submit Rating'}
               </button>
               <p className="text-xs text-text-muted">
-                Ratings require login and accept whole numbers from 1 to 5.
+                Ratings require login. One rating per book (1-5 stars).
               </p>
             </div>
           </div>
@@ -1142,7 +1426,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                 <div className="flex gap-4">
                   <div className="size-10 rounded-full bg-primary/20 shrink-0 overflow-hidden border border-border">
                     <img
-                      src={asAbsoluteAssetUrl(currentProfile.photo) || 'https://picsum.photos/seed/user/100/100'}
+                      src={asAbsoluteAssetUrl(currentProfile.photo) || fallbackProfilePhoto(currentProfile.name || 'user', 100)}
                       alt={currentProfile.name || 'User'}
                     />
                   </div>
