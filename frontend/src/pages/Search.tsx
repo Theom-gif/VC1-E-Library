@@ -1,5 +1,6 @@
 import React from 'react';
-import { Icons, BookType } from '../types';
+import {Icons} from '../types';
+import type {BookType} from '../types';
 import BookCard from '../components/BookCard';
 
 interface SearchPageProps {

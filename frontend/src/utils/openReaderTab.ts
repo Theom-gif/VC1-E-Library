@@ -149,10 +149,14 @@ export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${safeAppTitle}</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.svg" />
     <style>
       html, body { height: 100%; margin: 0; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: #0b1220; color: #e5e7eb; }
       .bar { padding: 10px 14px; background: #111827; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      .brand img { width: 18px; height: 18px; flex: none; }
       .title { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       a { color: #22d3ee; text-decoration: none; font-weight: 600; font-size: 12px; }
       a:hover { text-decoration: underline; }
@@ -162,7 +166,10 @@ export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
   </head>
   <body>
     <div class="bar">
-      <div class="title" title="${safeTitle}">${safeTitle}</div>
+      <div class="brand">
+        <img src="/favicon.svg" alt="" aria-hidden="true" />
+        <div class="title" title="${safeTitle}">${safeTitle}</div>
+      </div>
       <a href="${safeUrl}" target="_blank" rel="noreferrer noopener">Open file</a>
     </div>
     <iframe class="frame" src="${safeUrl}" title="${safeTitle}"></iframe>

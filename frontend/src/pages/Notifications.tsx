@@ -3,6 +3,7 @@ import { Icons } from '../types';
 import { motion } from 'motion/react';
 import notificationService from '../service/notificationService';
 import authService from '../service/authService';
+import {hasAuthenticatedSession} from '../utils/readerUpgrade';
 
 interface NotificationsPageProps {
   onNavigate: (page: any, data?: any) => void;
@@ -247,7 +248,7 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       setNotifications((prev) => prev.map((n) => (n.id.startsWith('local-') ? {...n, unread: false} : n)));
     }
 
-    if (!authService.getToken()) {
+    if (!authService.getToken() && !hasAuthenticatedSession()) {
       setIsMarkingAll(false);
       return;
     }
@@ -278,7 +279,7 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       return;
     }
 
-    if (!authService.getToken()) {
+    if (!authService.getToken() && !hasAuthenticatedSession()) {
       setNotifications((prev) => prev.map((n) => (n.id === id ? {...n, unread: false} : n)));
       return;
     }
@@ -307,7 +308,7 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       return;
     }
 
-    if (!authService.getToken()) {
+    if (!authService.getToken() && !hasAuthenticatedSession()) {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
       return;
     }

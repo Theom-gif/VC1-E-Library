@@ -1,25 +1,26 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, {Suspense, lazy, useMemo, useRef, useState} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Icons, BookType, hydrateBooksFromApi } from './types';
+import {Icons} from './types';
+import type {BookType} from './types';
 import {useLibrary} from './context/LibraryContext';
 import {useUnsavedChanges} from './context/UnsavedChangesContext';
 import defaultAvatarUrl from './test/defaultAvatar';
 import {useI18n} from './i18n/I18nProvider';
 
-// Page Components
-import Home from './pages/Home';
-import Authors from './pages/Authors';
-import Categories from './pages/Categories';
-import Favorites from './pages/Favorites';
-import Downloads from './pages/Downloads';
-import Settings from './pages/Settings';
-import Profile from './pages/Profile';
-import BookDetails from './pages/BookDetails';
-import AuthorDetails from './pages/AuthorDetails';
-import NotificationsPage from './pages/Notifications';
-import Logout from './pages/Logout';
-import SearchPage from './pages/Search';
-import Plans from './pages/Plans';
+// Page Components (lazy-loaded for faster initial load)
+const Home = lazy(() => import('./pages/Home'));
+const Authors = lazy(() => import('./pages/Authors'));
+const Categories = lazy(() => import('./pages/Categories'));
+const Favorites = lazy(() => import('./pages/Favorites'));
+const Downloads = lazy(() => import('./pages/Downloads'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Profile = lazy(() => import('./pages/Profile'));
+const BookDetails = lazy(() => import('./pages/BookDetails'));
+const AuthorDetails = lazy(() => import('./pages/AuthorDetails'));
+const NotificationsPage = lazy(() => import('./pages/Notifications'));
+const Logout = lazy(() => import('./pages/Logout'));
+const SearchPage = lazy(() => import('./pages/Search'));
+const Plans = lazy(() => import('./pages/Plans'));
 import CoverImage from './components/CoverImage';
 import AvatarImage from './components/AvatarImage';
 import profileService from './service/profileService';
@@ -75,6 +76,17 @@ const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
 const THEME_MODE_KEY = 'elibrary_theme_mode';
 const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
 const DEFAULT_PROFILE_PHOTO = defaultAvatarUrl;
+
+function PageFallback() {
+  return (
+    <div className="mx-auto w-full max-w-7xl px-6 lg:px-20 py-16">
+      <div className="flex items-center gap-3 text-text-muted">
+        <Icons.BookOpen className="size-5 animate-pulse" />
+        <span className="text-sm font-semibold">Loading…</span>
+      </div>
+    </div>
+  );
+}
 
 function readProfileCache(): Partial<{name: string; photo: string; memberSince: string}> {
   try {
@@ -209,7 +221,6 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isLightMode, setIsLightMode] = useState(() => readThemeMode() === 'light');
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-  const [, setBooksSyncVersion] = useState(0);
   const isGuestUser = authUser?.id === 'guest';
   const guestRestrictedPages: Page[] = ['favorites', 'downloads', 'settings', 'profile'];
   const cachedProfile = readProfileCache();
@@ -360,23 +371,6 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       body.style.paddingRight = previousPaddingRight;
     };
   }, [authUser?.id, showAccessPrompt, showHomeAuthOverlay, showReauthPrompt]);
-  React.useEffect(() => {
-    let isMounted = true;
-
-    hydrateBooksFromApi()
-      .then((count) => {
-        if (isMounted && count > 0) {
-          setBooksSyncVersion((value) => value + 1);
-        }
-      })
-      .catch(() => {
-        // Keep static mock data when backend is unavailable.
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   React.useEffect(() => {
     setUser((prev) => ({
@@ -934,7 +928,9 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            {renderPage()}
+            <Suspense fallback={<PageFallback />}>
+              {renderPage()}
+            </Suspense>
           </motion.div>
         </AnimatePresence>
       </main>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Icons, BookType } from '../types';
+import {Icons} from '../types';
+import type {BookType} from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import {useFavorites} from '../context/FavoritesContext';
 import CoverImage from './CoverImage';

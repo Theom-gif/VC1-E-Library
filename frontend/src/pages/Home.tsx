@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Icons } from '../types';
+import React, {useMemo, useState} from 'react';
+import {Icons} from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
 import CoverImage from '../components/CoverImage';
@@ -38,6 +38,29 @@ export default function Home({
   const showError = Boolean(error && !isLoading);
   const showMock = source === 'mock' && !isLoading && !error;
   const canShowAuthOverlay = Boolean(showAuthOverlay && onLogin && onRegister);
+
+  const topRatedBooks = useMemo(() => {
+    const list = Array.isArray(books) ? books : [];
+    const sorted = [...list].sort((a, b) => {
+      const aRating = Number(a?.rating) || 0;
+      const bRating = Number(b?.rating) || 0;
+      if (bRating !== aRating) return bRating - aRating;
+
+      const aReviews = Number((a as any)?.reviews) || 0;
+      const bReviews = Number((b as any)?.reviews) || 0;
+      if (bReviews !== aReviews) return bReviews - aReviews;
+
+      return String(a?.title || '').localeCompare(String(b?.title || ''));
+    });
+    return sorted.slice(0, 4);
+  }, [books]);
+
+  const formatRating = (value: unknown) => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || Number.isNaN(n)) return '0';
+    if (n <= 0) return '0';
+    return n.toFixed(1).replace(/\.0$/, '');
+  };
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
@@ -524,7 +547,7 @@ export default function Home({
             <h3 className="text-xl font-bold">Top Rated</h3>
           </div>
           <div className="space-y-4">
-            {books.slice(0, 4).map((book, i) => (
+            {topRatedBooks.map((book, i) => (
               <div
                 key={book.id}
                 onClick={() => onNavigate('book-details', book)}
@@ -536,7 +559,7 @@ export default function Home({
                   <h4 className="text-sm font-bold text-text group-hover:text-primary transition-colors line-clamp-1">{book.title}</h4>
                   <div className="flex items-center gap-1">
                     <Icons.Star className="size-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-[10px] font-bold text-text-muted">{book.rating}</span>
+                    <span className="text-[10px] font-bold text-text-muted">{formatRating(book.rating)}</span>
                   </div>
                 </div>
               </div>

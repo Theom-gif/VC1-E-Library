@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Icons, BookType } from '../types';
+import {Icons} from '../types';
+import type {BookType} from '../types';
 import { motion } from 'motion/react';
 import BookCard from '../components/BookCard';
 import {useFavorites} from '../context/FavoritesContext';

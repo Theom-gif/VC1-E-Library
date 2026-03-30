@@ -7,9 +7,12 @@ const TOKEN_KEYS = new Set([
   'auth_token',
   'jwt',
   'bearer_token',
+  'plainTextToken',
+  'plain_text_token',
 ]);
 
 const pickString = (value) => {
+  if (typeof value !== 'string') return '';
   const normalized = String(value ?? '').trim();
   return normalized ? normalized : '';
 };

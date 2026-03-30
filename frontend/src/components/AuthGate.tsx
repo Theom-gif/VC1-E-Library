@@ -1,4 +1,4 @@
-import {FormEvent, ReactNode, useState} from 'react';
+import {FormEvent, ReactNode, useEffect, useState} from 'react';
 import {ArrowRight, BookOpen, Eye, EyeOff, Lock, Mail} from 'lucide-react';
 import authService from '../service/authService';
 import {isAuthRequired, setAuthRequired, setMembershipTier} from '../utils/readerUpgrade';
@@ -340,12 +340,56 @@ export default function AuthGate({children}: AuthGateProps) {
     setSessionUser(null);
   };
 
+  useEffect(() => {
+    if (!sessionUser || isGuestUser(sessionUser)) return;
+    let alive = true;
+
+    void authService
+      .me()
+      .then(() => {
+        if (!alive) return;
+        if (sessionUser.role === 'user') {
+          setMembershipTier('reader');
+        }
+      })
+      .catch((requestError: any) => {
+        if (!alive) return;
+        if (Number(requestError?.status) !== 401) return;
+
+        authService.clearToken();
+        clearSession();
+        setMembershipTier('normal');
+        if (ALLOW_GUEST) {
+          setAuthRequired(false);
+          setForceLogin(false);
+          const guest = createGuestSession();
+          saveSession(guest);
+          setSessionUser(guest);
+          return;
+        }
+        setAuthRequired(true);
+        setForceLogin(true);
+        setSessionUser(null);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [sessionUser]);
+
   const login = async (payload: {email: string; password: string; role?: RoleName}) => {
     const response = await loginWithFallbacks({
       email: payload.email.trim().toLowerCase(),
       password: payload.password,
       role: payload.role,
     });
+    try {
+      await authService.me();
+    } catch (requestError: any) {
+      if (Number(requestError?.status) === 401) {
+        throw new Error('Login failed. Please check your email/password and try again.');
+      }
+    }
     const previousMemberSince = readSession()?.memberSince;
     const user = toSessionUser(response, payload.email, payload.role ?? 'user', previousMemberSince);
     saveSession(user);
@@ -374,6 +418,13 @@ export default function AuthGate({children}: AuthGateProps) {
         role: payload.role,
       });
       sessionSource = loginResponse;
+    }
+    try {
+      await authService.me();
+    } catch (requestError: any) {
+      if (Number(requestError?.status) === 401) {
+        throw new Error('Registration failed. Please try again.');
+      }
     }
     const user = toSessionUser(sessionSource, payload.email, payload.role, new Date().toISOString());
     saveSession(user);

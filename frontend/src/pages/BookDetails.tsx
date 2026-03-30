@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { Icons, BookType } from '../types';
+import {Icons} from '../types';
+import type {BookType} from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import {useLibrary} from '../context/LibraryContext';
 import {useFavorites} from '../context/FavoritesContext';
@@ -10,6 +11,7 @@ import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
 import {
   PENDING_BOOK_RATING_KEY,
+  hasAuthenticatedSession,
   requestAuth,
   shouldRequireAuthForRead,
   trackRead,
@@ -103,7 +105,7 @@ function pickNumber(...values: unknown[]): number {
 }
 
 function canUseProtectedFeatures(): boolean {
-  return Boolean(readToken());
+  return Boolean(readToken()) || hasAuthenticatedSession();
 }
 
 const PROFILE_CACHE_KEY = 'elibrary_profile_cache';

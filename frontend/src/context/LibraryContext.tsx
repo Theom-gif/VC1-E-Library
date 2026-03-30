@@ -1,6 +1,5 @@
 import React, {createContext, useCallback, useContext, useMemo, useState} from 'react';
 import type {BookType} from '../types';
-import {MOCK_BOOKS, NEW_ARRIVALS} from '../types';
 import bookService from '../service/bookService';
 
 type LibrarySource = 'api' | 'mock';
@@ -26,11 +25,11 @@ function pickErrorMessage(error: any): string {
 }
 
 export function LibraryProvider({children}: {children: React.ReactNode}) {
-  const [books, setBooks] = useState<BookType[]>(() => MOCK_BOOKS);
-  const [newArrivals, setNewArrivals] = useState<BookType[]>(() => NEW_ARRIVALS);
-  const [isLoading, setIsLoading] = useState(false);
+  const [books, setBooks] = useState<BookType[]>(() => []);
+  const [newArrivals, setNewArrivals] = useState<BookType[]>(() => []);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<LibrarySource>('mock');
+  const [source, setSource] = useState<LibrarySource>('api');
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -41,8 +40,16 @@ export function LibraryProvider({children}: {children: React.ReactNode}) {
       setNewArrivals(response.items.slice(0, 5));
       setSource('api');
     } catch (requestError: any) {
-      setSource('mock');
-      setError(pickErrorMessage(requestError));
+      try {
+        const mock = await import('../data/mockBooks');
+        setBooks(mock.MOCK_BOOKS);
+        setNewArrivals(mock.NEW_ARRIVALS);
+        setSource('mock');
+        setError(null);
+      } catch {
+        setSource('mock');
+        setError(pickErrorMessage(requestError));
+      }
     } finally {
       setIsLoading(false);
     }
