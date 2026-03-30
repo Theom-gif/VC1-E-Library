@@ -33,6 +33,7 @@ const SESSION_KEY = 'elibrary_session';
 const LOGOUT_TOKEN_KEY = 'elibrary_last_token';
 const FORCE_LOGIN_KEY = 'elibrary_force_login';
 const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
+const FAVICON_SRC = `${import.meta.env.BASE_URL}favicon.svg?v=1`;
 const AUTO_LOGIN_BYPASS = String((import.meta as any)?.env?.VITE_AUTO_LOGIN_BYPASS || '').trim().toLowerCase() === 'true';
 const ALLOW_GUEST = String((import.meta as any)?.env?.VITE_ALLOW_GUEST ?? 'true').trim().toLowerCase() !== 'false';
 function safeLocalStorageGet(key: string): string | null {
@@ -517,7 +518,7 @@ export default function AuthGate({children}: AuthGateProps) {
       <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f7fcfd,_#eef6f7_55%,_#e8f0f2)] dark:bg-[#0f1b1f] flex flex-col items-center justify-center p-4 text-slate-900 dark:text-[#f8fafc]">
         <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
           <div className="flex items-center gap-3">
-            <img src="/favicon.svg" alt="" className="h-10 w-10" />
+            <img src={FAVICON_SRC} alt="" className="h-10 w-10" />
             <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">{APP_NAME}</span>
           </div>
           <button className="rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:text-slate-900 dark:border-white/10 dark:bg-[#1d3438] dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">
@@ -553,7 +554,7 @@ export default function AuthGate({children}: AuthGateProps) {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f7fcfd,_#eef6f7_55%,_#e8f0f2)] dark:bg-[#0f1b1f] flex flex-col items-center justify-center p-4 text-slate-900 dark:text-[#f8fafc]">
       <header className="absolute top-0 flex w-full items-center justify-between px-8 py-6">
         <div className="flex items-center gap-3">
-          <img src="/favicon.svg" alt="" className="h-10 w-10" />
+          <img src={FAVICON_SRC} alt="" className="h-10 w-10" />
           <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-[#f8fafc]">{APP_NAME}</span>
         </div>
         <button className="text-sm font-medium text-slate-500 hover:text-slate-900 dark:text-[#94a3b8] dark:hover:text-[#f8fafc]">Help Center</button>

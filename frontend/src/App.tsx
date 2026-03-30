@@ -77,6 +77,7 @@ const THEME_MODE_KEY = 'elibrary_theme_mode';
 const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
 const DEFAULT_PROFILE_PHOTO = defaultAvatarUrl;
 const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
+const FAVICON_SRC = `${import.meta.env.BASE_URL}favicon.svg?v=1`;
 
 function PageFallback() {
   return (
@@ -713,7 +714,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
               className="elibrary-logo shrink-0 flex items-center gap-2 text-primary cursor-pointer"
               onClick={() => navigateTo('home')}
             >
-              <img src="/favicon.svg" alt="" className="size-8" />
+              <img src={FAVICON_SRC} alt="" className="size-8" />
               <h2 className="text-xl font-bold leading-tight tracking-tight hidden sm:block">{APP_NAME}</h2>
             </div>
             <nav className="hidden xl:flex items-center gap-5">
@@ -941,7 +942,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
         <div className="mx-auto max-w-7xl px-6 lg:px-20 grid grid-cols-1 md:grid-cols-4 gap-12">
           <div className="col-span-1 md:col-span-1">
             <div className="text-primary flex items-center gap-2 mb-4">
-              <img src="/favicon.svg" alt="" className="size-6" />
+              <img src={FAVICON_SRC} alt="" className="size-6" />
               <h2 className="text-lg font-bold">{APP_NAME}</h2>
             </div>
             <p className="text-sm text-text-muted leading-relaxed">

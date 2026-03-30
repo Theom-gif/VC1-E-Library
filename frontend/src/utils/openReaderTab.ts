@@ -11,6 +11,7 @@ type OpenReaderTabArgs = {
 
 // Use explicit Unicode escapes to avoid mojibake on systems that read files as non-UTF8.
 const APP_TAB_TITLE = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
+const FAVICON_SRC = `${import.meta.env.BASE_URL}favicon.svg?v=1`;
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -132,6 +133,7 @@ function wireReadingTracking(
 export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
   const safeTitle = escapeHtml(title || 'Reader');
   const safeAppTitle = escapeHtml(APP_TAB_TITLE);
+  const safeFaviconSrc = escapeHtml(FAVICON_SRC);
   const safeUrl = escapeHtml(url);
   const trackingId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const safeTrackingId = escapeHtml(trackingId);
@@ -149,8 +151,8 @@ export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${safeAppTitle}</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="shortcut icon" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="${safeFaviconSrc}" />
+    <link rel="shortcut icon" href="${safeFaviconSrc}" />
     <style>
       html, body { height: 100%; margin: 0; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: #0b1220; color: #e5e7eb; }
@@ -167,7 +169,7 @@ export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
   <body>
     <div class="bar">
       <div class="brand">
-        <img src="/favicon.svg" alt="" aria-hidden="true" />
+        <img src="${safeFaviconSrc}" alt="" aria-hidden="true" />
         <div class="title" title="${safeTitle}">${safeTitle}</div>
       </div>
       <a href="${safeUrl}" target="_blank" rel="noreferrer noopener">Open file</a>
