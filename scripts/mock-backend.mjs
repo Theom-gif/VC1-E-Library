@@ -247,6 +247,7 @@ export function createMockBackendServer({logger = console} = {}) {
   const categories = buildCategories(books);
   const authors = buildAuthors(books);
   const favorites = new Set();
+  const authorFollowsByUser = new Map(); // userId => Set(authorId)
   const baseUser = {
     id: 1,
     firstname: 'Mock',
@@ -311,6 +312,21 @@ export function createMockBackendServer({logger = console} = {}) {
     ensureUser(sessionUser.id);
     users.set(String(sessionUser.id), {...users.get(String(sessionUser.id)), ...sessionUser});
     return users.get(String(sessionUser.id));
+  }
+
+  function ensureAuthorFollowSet(userId) {
+    const uid = String(userId ?? '').trim();
+    if (!uid) return new Set();
+    if (!authorFollowsByUser.has(uid)) authorFollowsByUser.set(uid, new Set());
+    return authorFollowsByUser.get(uid);
+  }
+
+  function isFollowingAuthorId(userId, authorId) {
+    const uid = String(userId ?? '').trim();
+    const aid = pickString(authorId);
+    if (!uid || !aid) return false;
+    const set = ensureAuthorFollowSet(uid);
+    return set.has(aid);
   }
 
   function createNotification(userId, payload) {
@@ -658,7 +674,65 @@ export function createMockBackendServer({logger = console} = {}) {
         sendJson(res, 404, {message: 'Author not found'});
         return;
       }
-      sendJson(res, 200, {success: true, data: author});
+      const user = parseBearerToken(req) ? ensureUser(sessionUser.id) || sessionUser : null;
+      const isFollowing = user ? isFollowingAuthorId(user.id, author.id) : false;
+      sendJson(res, 200, {
+        success: true,
+        data: {
+          ...author,
+          followers_count: author.followers,
+          is_following: isFollowing,
+        },
+      });
+      return;
+    }
+
+    const authorFollowMatch = pathname.match(/^\/api\/authors\/([^/]+)\/follow$/);
+    if (authorFollowMatch && (method === 'POST' || method === 'DELETE')) {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      const rawId = decodeURIComponent(authorFollowMatch[1]);
+      const author =
+        authors.find((item) => String(item.id) === pickString(rawId)) ||
+        authors.find((item) => String(item.id).toLowerCase() === pickString(rawId).toLowerCase());
+      if (!author) {
+        sendJson(res, 404, {message: 'Author not found'});
+        return;
+      }
+      const set = ensureAuthorFollowSet(user.id);
+      const wasFollowing = set.has(author.id);
+      if (method === 'POST') set.add(author.id);
+      else set.delete(author.id);
+      const isFollowing = set.has(author.id);
+      const delta = isFollowing === wasFollowing ? 0 : isFollowing ? 1 : -1;
+      author.followers = Math.max(0, Math.round(Number(author.followers || 0)) + delta);
+      sendJson(res, 200, {
+        success: true,
+        data: {
+          author_id: author.id,
+          is_following: isFollowing,
+          followers_count: author.followers,
+        },
+      });
+      return;
+    }
+
+    if (method === 'GET' && pathname === '/api/me/following/authors') {
+      const user = requireAuth(req, res);
+      if (!user) return;
+      const set = ensureAuthorFollowSet(user.id);
+      const followed = authors
+        .filter((a) => set.has(a.id))
+        .map((a) => ({
+          ...a,
+          followers_count: a.followers,
+          is_following: true,
+        }));
+      sendJson(res, 200, {
+        success: true,
+        data: followed,
+        meta: {current_page: 1, last_page: 1, per_page: followed.length, total: followed.length},
+      });
       return;
     }
 
