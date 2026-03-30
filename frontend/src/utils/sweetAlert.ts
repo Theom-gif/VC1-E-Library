@@ -14,15 +14,22 @@ type SweetAlertPayload = SweetAlertOptions & {
 };
 
 const SWEET_ALERT_EVENT = 'elibrary:sweet-alert';
+const PROVIDER_FLAG = '__ELIBRARY_SWEET_ALERT_PROVIDER__';
 
 function firePayload(payload: SweetAlertPayload) {
-  if (typeof window === 'undefined') {
-    // Browser-less fallback.
+  const hasProvider = typeof window !== 'undefined' && Boolean((window as any)?.[PROVIDER_FLAG]);
+  if (!hasProvider) {
+    if (payload.showCancel) {
+      // eslint-disable-next-line no-alert
+      payload.resolve(confirm(payload.text));
+      return;
+    }
     // eslint-disable-next-line no-alert
     alert(payload.text);
     payload.resolve(true);
     return;
   }
+
   window.dispatchEvent(new CustomEvent<SweetAlertPayload>(SWEET_ALERT_EVENT, {detail: payload}));
 }
 
@@ -64,4 +71,3 @@ export function onSweetAlert(handler: (payload: SweetAlertPayload) => void) {
   window.addEventListener(SWEET_ALERT_EVENT, listener as EventListener);
   return () => window.removeEventListener(SWEET_ALERT_EVENT, listener as EventListener);
 }
-

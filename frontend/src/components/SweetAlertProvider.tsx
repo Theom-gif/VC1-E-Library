@@ -24,6 +24,17 @@ export function SweetAlertProvider({children}: {children: React.ReactNode}) {
   const confirmButtonRef = React.useRef<HTMLButtonElement | null>(null);
 
   React.useEffect(() => {
+    (window as any).__ELIBRARY_SWEET_ALERT_PROVIDER__ = true;
+    return () => {
+      try {
+        delete (window as any).__ELIBRARY_SWEET_ALERT_PROVIDER__;
+      } catch {
+        (window as any).__ELIBRARY_SWEET_ALERT_PROVIDER__ = false;
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
     return onSweetAlert((payload) => {
       setActive(() => ({
         title: payload.title,
@@ -128,4 +139,3 @@ export function SweetAlertProvider({children}: {children: React.ReactNode}) {
     </>
   );
 }
-
