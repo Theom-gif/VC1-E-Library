@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import {URL, pathToFileURL} from 'node:url';
 
@@ -92,6 +93,11 @@ function parseBearerToken(req) {
   const authHeader = pickString(req?.headers?.authorization);
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : '';
+}
+
+function generateToken() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return crypto.randomBytes(24).toString('hex');
 }
 
 function svgCoverDataUrl(title, background = '#0ea5e9') {
@@ -258,6 +264,12 @@ export function createMockBackendServer({logger = console} = {}) {
 
   const users = new Map();
   users.set(String(baseUser.id), {...baseUser});
+  const userIdByEmail = new Map(); // email => userId
+  userIdByEmail.set(pickString(baseUser.email).toLowerCase(), String(baseUser.id));
+  const passwordByUserId = new Map(); // userId => password (plain text; mock only)
+  passwordByUserId.set(String(baseUser.id), 'password');
+  const sessionsByToken = new Map(); // token => userId
+  let nextUserId = 2;
 
   const readingLogs = [];
   const reviews = [];
@@ -267,9 +279,6 @@ export function createMockBackendServer({logger = console} = {}) {
   let nextReadingLogId = 1;
   let nextReviewId = 1;
   let nextNotificationId = 1;
-
-  // "Session" user for this mock process; updated via login/register.
-  let sessionUser = {...baseUser};
 
   const achievementDefinitions = [
     {key: 'streak', label: 'Streak', description: 'Read on consecutive days.', threshold: 7, unit: 'days'},
@@ -302,16 +311,31 @@ export function createMockBackendServer({logger = console} = {}) {
     return users.get(key);
   }
 
-  function requireAuth(req, res) {
+  function normalizeEmail(value) {
+    return pickString(value).trim().toLowerCase();
+  }
+
+  function issueTokenForUserId(userId) {
+    const token = generateToken();
+    sessionsByToken.set(token, String(userId));
+    return token;
+  }
+
+  function maybeAuth(req) {
     const token = parseBearerToken(req);
-    if (!token) {
+    if (!token) return null;
+    const uid = sessionsByToken.get(token);
+    if (!uid) return null;
+    return users.get(String(uid)) || null;
+  }
+
+  function requireAuth(req, res) {
+    const user = maybeAuth(req);
+    if (!user) {
       sendJson(res, 401, {message: 'Unauthenticated'});
       return null;
     }
-    // Ensure session user exists in our in-memory user table.
-    ensureUser(sessionUser.id);
-    users.set(String(sessionUser.id), {...users.get(String(sessionUser.id)), ...sessionUser});
-    return users.get(String(sessionUser.id));
+    return user;
   }
 
   function ensureAuthorFollowSet(userId) {
@@ -674,7 +698,7 @@ export function createMockBackendServer({logger = console} = {}) {
         sendJson(res, 404, {message: 'Author not found'});
         return;
       }
-      const user = parseBearerToken(req) ? ensureUser(sessionUser.id) || sessionUser : null;
+      const user = maybeAuth(req);
       const isFollowing = user ? isFollowingAuthorId(user.id, author.id) : false;
       sendJson(res, 200, {
         success: true,
@@ -736,38 +760,87 @@ export function createMockBackendServer({logger = console} = {}) {
       return;
     }
 
-    // Auth (minimal)
-    if (method === 'POST' && (pathname === '/api/auth/login' || pathname === '/api/auth/register')) {
+    // Auth (mock, multi-user)
+    if (method === 'POST' && pathname === '/api/auth/register') {
       const body = (await readJsonBody(req)) || {};
-      const email = pickString(body.email, 'user@example.com');
+      const email = normalizeEmail(body.email);
       const firstname = pickString(body.firstname, 'Mock');
       const lastname = pickString(body.lastname, 'User');
       const role = pickString(body.role, 'user');
+      const password = pickString(body.password);
+      const passwordConfirmation = pickString(body.password_confirmation, body.confirm_password);
 
-      sessionUser = {
-        ...sessionUser,
-        id: sessionUser.id || 1,
-        firstname,
-        lastname,
-        email,
-        role,
-      };
-      users.set(String(sessionUser.id), {...(users.get(String(sessionUser.id)) || {}), ...sessionUser});
+      const errors = {};
+      if (!email) errors.email = ['The email field is required.'];
+      if (!password) errors.password = ['The password field is required.'];
+      if (passwordConfirmation && password && passwordConfirmation !== password) {
+        errors.password_confirmation = ['The password confirmation does not match.'];
+      }
+      if (Object.keys(errors).length) {
+        sendJson(res, 422, {message: 'Validation error', errors});
+        return;
+      }
+      if (userIdByEmail.has(email)) {
+        sendJson(res, 422, {message: 'Validation error', errors: {email: ['The email has already been taken.']}});
+        return;
+      }
+
+      const id = nextUserId++;
+      const user = {id, firstname, lastname, email, role};
+      users.set(String(id), user);
+      userIdByEmail.set(email, String(id));
+      passwordByUserId.set(String(id), password);
+      const token = issueTokenForUserId(id);
 
       sendJson(res, 200, {
-        token: 'mock-token',
-        user: {
-          id: 1,
-          firstname,
-          lastname,
-          email,
-          role,
-        },
+        token,
+        user,
       });
       return;
     }
 
+    if (method === 'POST' && pathname === '/api/auth/login') {
+      const body = (await readJsonBody(req)) || {};
+      const email = normalizeEmail(body.email);
+      const password = pickString(body.password);
+
+      if (!email || !password) {
+        sendJson(res, 422, {
+          message: 'Validation error',
+          errors: {
+            ...(email ? {} : {email: ['The email field is required.']}),
+            ...(password ? {} : {password: ['The password field is required.']}),
+          },
+        });
+        return;
+      }
+
+      const userId = userIdByEmail.get(email);
+      if (!userId) {
+        sendJson(res, 401, {message: 'Invalid credentials'});
+        return;
+      }
+
+      const expectedPassword = pickString(passwordByUserId.get(String(userId)));
+      if (expectedPassword && expectedPassword !== password) {
+        sendJson(res, 401, {message: 'Invalid credentials'});
+        return;
+      }
+
+      const user = users.get(String(userId));
+      if (!user) {
+        sendJson(res, 401, {message: 'Invalid credentials'});
+        return;
+      }
+
+      const token = issueTokenForUserId(userId);
+      sendJson(res, 200, {token, user});
+      return;
+    }
+
     if (method === 'POST' && (pathname === '/api/logout' || pathname === '/logout')) {
+      const token = parseBearerToken(req);
+      if (token) sessionsByToken.delete(token);
       sendJson(res, 200, {success: true, message: 'Logged out'});
       return;
     }
@@ -781,7 +854,8 @@ export function createMockBackendServer({logger = console} = {}) {
 
     if (method === 'GET' && pathname === '/api/me/profile') {
       // The UI calls this before/without login in some flows; return a profile object regardless.
-      sendJson(res, 200, buildProfile(sessionUser.id));
+      const user = maybeAuth(req) || baseUser;
+      sendJson(res, 200, buildProfile(user.id));
       return;
     }
 
@@ -792,7 +866,7 @@ export function createMockBackendServer({logger = console} = {}) {
     }
 
     if (method === 'GET' && pathname === '/api/me/reading-activity') {
-      const user = parseBearerToken(req) ? requireAuth(req, res) : ensureUser(sessionUser.id) || sessionUser;
+      const user = parseBearerToken(req) ? requireAuth(req, res) : baseUser;
       if (!user) return;
       const range = pickString(url.searchParams.get('range'), '7d');
       const now = new Date();
@@ -1254,7 +1328,24 @@ async function runSelfTest() {
   const port = typeof address === 'object' && address ? address.port : null;
   if (!port) throw new Error('Unable to start server');
 
-  const authHeaders = {Accept: 'application/json', Authorization: 'Bearer mock-token'};
+  const registerRes = await fetch(`http://127.0.0.1:${port}/api/auth/register`, {
+    method: 'POST',
+    headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      email: 'user1@example.com',
+      password: 'secret',
+      password_confirmation: 'secret',
+      firstname: 'Test',
+      lastname: 'User',
+      role: 'user',
+    }),
+  });
+  const registerPayload = await registerRes.json();
+  if (!registerRes.ok) throw new Error(`Self-test failed (/api/auth/register): HTTP ${registerRes.status}`);
+  const userToken = pickString(registerPayload?.token);
+  if (!userToken) throw new Error('Self-test failed: missing auth token after register');
+
+  const authHeaders = {Accept: 'application/json', Authorization: `Bearer ${userToken}`};
 
   const res = await fetch(`http://127.0.0.1:${port}/api/books?per_page=5`, {
     headers: {Accept: 'application/json'},
@@ -1345,23 +1436,34 @@ async function runSelfTest() {
   if (!finishPayload?.data?.reading_log) throw new Error('Self-test failed: missing reading_log for finish');
 
   // Admin notifications sender
-  const loginRes = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+  const adminRegisterRes = await fetch(`http://127.0.0.1:${port}/api/auth/register`, {
     method: 'POST',
     headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
-    body: JSON.stringify({email: 'admin@example.com', firstname: 'Admin', lastname: 'User', role: 'admin'}),
+    body: JSON.stringify({
+      email: 'admin@example.com',
+      password: 'secret',
+      password_confirmation: 'secret',
+      firstname: 'Admin',
+      lastname: 'User',
+      role: 'admin',
+    }),
   });
-  if (!loginRes.ok) throw new Error(`Self-test failed (/api/auth/login admin): HTTP ${loginRes.status}`);
+  const adminRegisterPayload = await adminRegisterRes.json();
+  if (!adminRegisterRes.ok) throw new Error(`Self-test failed (/api/auth/register admin): HTTP ${adminRegisterRes.status}`);
+  const adminToken = pickString(adminRegisterPayload?.token);
+  if (!adminToken) throw new Error('Self-test failed: missing admin token');
+  const adminAuthHeaders = {Accept: 'application/json', Authorization: `Bearer ${adminToken}`};
 
   const adminSendRes = await fetch(`http://127.0.0.1:${port}/api/admin/notifications/send`, {
     method: 'POST',
-    headers: {...authHeaders, 'Content-Type': 'application/json'},
+    headers: {...adminAuthHeaders, 'Content-Type': 'application/json'},
     body: JSON.stringify({title: 'Test', message: 'Hello', type: 'system', audience: 'all'}),
   });
   const adminSendPayload = await adminSendRes.json();
   if (!adminSendRes.ok) throw new Error(`Self-test failed (/api/admin/notifications/send): HTTP ${adminSendRes.status}`);
   if (!adminSendPayload?.data?.created) throw new Error('Self-test failed: expected created count');
 
-  const adminListRes = await fetch(`http://127.0.0.1:${port}/api/admin/notifications`, {headers: authHeaders});
+  const adminListRes = await fetch(`http://127.0.0.1:${port}/api/admin/notifications`, {headers: adminAuthHeaders});
   const adminListPayload = await adminListRes.json();
   if (!adminListRes.ok) throw new Error(`Self-test failed (/api/admin/notifications): HTTP ${adminListRes.status}`);
   if (!Array.isArray(adminListPayload?.data)) throw new Error('Self-test failed: admin notifications data should be an array');
