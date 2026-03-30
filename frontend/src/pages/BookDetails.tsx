@@ -10,6 +10,7 @@ import reviewService from '../service/reviewService';
 import authorService from '../service/authorService';
 import CoverImage from '../components/CoverImage';
 import {openReaderTab} from '../utils/openReaderTab';
+import {sweetAlert, sweetConfirm} from '../utils/sweetAlert';
 import {isFollowingAuthor, setFollowingAuthor} from '../utils/followingAuthors';
 import {
   PENDING_BOOK_RATING_KEY,
@@ -680,7 +681,10 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       return;
     }
 
-    const ok = typeof window === 'undefined' ? true : window.confirm('Delete this comment?');
+    const ok =
+      typeof window === 'undefined'
+        ? true
+        : await sweetConfirm('Delete this comment?', {icon: 'warning', title: 'Confirm', confirmText: 'Delete'});
     if (!ok) return;
 
     setDeletingCommentId(commentId);
@@ -1180,12 +1184,12 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       trackRead(normalizeBackendBookId(currentBook.id));
                     })
                     .catch((err: any) => {
-                      window.alert(err?.message || 'Unable to open offline book.');
+                      void sweetAlert(err?.message || 'Unable to open offline book.', {icon: 'error', title: 'Error'});
                     });
                   return;
                 }
                 void openOnline().catch((err: any) => {
-                  window.alert(err?.message || 'Unable to open this book.');
+                  void sweetAlert(err?.message || 'Unable to open this book.', {icon: 'error', title: 'Error'});
                 });
               }}
               className="bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
@@ -1206,7 +1210,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       trackRead(normalizeBackendBookId(currentBook.id));
                     })
                     .catch((err: any) => {
-                      window.alert(err?.message || 'Unable to open offline book.');
+                      void sweetAlert(err?.message || 'Unable to open offline book.', {icon: 'error', title: 'Error'});
                     });
                   return;
                 }

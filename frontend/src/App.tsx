@@ -76,7 +76,7 @@ const PROFILE_CACHE_KEY = 'elibrary_profile_cache';
 const THEME_MODE_KEY = 'elibrary_theme_mode';
 const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
 const DEFAULT_PROFILE_PHOTO = defaultAvatarUrl;
-const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
+const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b8-ELibrary';
 const FAVICON_SRC = `${import.meta.env.BASE_URL}favicon.svg?v=1`;
 
 function PageFallback() {

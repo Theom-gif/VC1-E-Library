@@ -32,7 +32,7 @@ type AuthGateProps = {
 const SESSION_KEY = 'elibrary_session';
 const LOGOUT_TOKEN_KEY = 'elibrary_last_token';
 const FORCE_LOGIN_KEY = 'elibrary_force_login';
-const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b5-ELibrary';
+const APP_NAME = '\u1782\u1798\u17d2\u1796\u17b8-ELibrary';
 const FAVICON_SRC = `${import.meta.env.BASE_URL}favicon.svg?v=1`;
 const AUTO_LOGIN_BYPASS = String((import.meta as any)?.env?.VITE_AUTO_LOGIN_BYPASS || '').trim().toLowerCase() === 'true';
 const ALLOW_GUEST = String((import.meta as any)?.env?.VITE_ALLOW_GUEST ?? 'true').trim().toLowerCase() !== 'false';

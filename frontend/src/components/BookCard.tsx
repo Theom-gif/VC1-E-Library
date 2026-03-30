@@ -5,6 +5,7 @@ import type {BookType} from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import {useFavorites} from '../context/FavoritesContext';
 import CoverImage from './CoverImage';
+import {sweetAlert} from '../utils/sweetAlert';
 
 interface BookCardProps {
   book: BookType;
@@ -38,7 +39,7 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
               e.stopPropagation();
               if (downloaded) {
                 void openOffline(String(book.id)).catch((err: any) => {
-                  window.alert(err?.message || 'Unable to open offline book.');
+                  void sweetAlert(err?.message || 'Unable to open offline book.', {icon: 'error', title: 'Error'});
                 });
                 return;
               }
