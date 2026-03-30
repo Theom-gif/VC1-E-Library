@@ -11,7 +11,7 @@ interface BookCardProps {
   book: BookType;
   onClick: () => void;
   onNavigate?: (page: any, data?: any) => void;
-  onAuthorClick?: (author: string) => void;
+  onAuthorClick?: (author: string | {id?: string; name?: string}) => void;
   key?: any;
 }
 
@@ -76,7 +76,7 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
           onClick={(e) => {
             if (onAuthorClick) {
               e.stopPropagation();
-              onAuthorClick(book.author);
+              onAuthorClick(book.authorId ? {id: book.authorId, name: book.author} : book.author);
             }
           }}
         >

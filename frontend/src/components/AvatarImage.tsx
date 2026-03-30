@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {API_BASE_URL} from '../service/apiClient';
 import defaultAvatarUrl from '../test/defaultAvatar';
+import {readStoredAuthToken} from '../utils/authToken';
 
 type AvatarImageProps = {
   src: string;
@@ -32,20 +33,6 @@ function toggleStorageInPath(url: URL): URL | null {
   const u = new URL(url.toString());
   u.pathname = `/storage${normalized}`;
   return u;
-}
-
-function readToken(): string | null {
-  try {
-    const token =
-      localStorage.getItem('token') ||
-      localStorage.getItem('access_token') ||
-      localStorage.getItem('accessToken') ||
-      localStorage.getItem('auth_token');
-    const normalized = String(token ?? '').trim();
-    return normalized || null;
-  } catch {
-    return null;
-  }
 }
 
 export default function AvatarImage({src, alt, className, title, fallbackSrc}: AvatarImageProps) {
@@ -85,7 +72,7 @@ export default function AvatarImage({src, alt, className, title, fallbackSrc}: A
     // If backend serves avatars behind auth (e.g. /api/... requires Bearer token),
     // the browser <img> request will 401. Retry via fetch() with Authorization and use a blob URL.
     if (!triedRef.current.triedAuthBlob && url) {
-      const token = readToken();
+      const token = readStoredAuthToken();
       const isApiPath = url.pathname.startsWith('/api/');
       if (token && isApiPath) {
         triedRef.current.triedAuthBlob = true;

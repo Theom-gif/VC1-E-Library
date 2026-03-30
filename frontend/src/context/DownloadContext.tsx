@@ -4,6 +4,7 @@ import {API_BASE_URL} from '../service/apiClient';
 import {useToast} from '../components/ToastProvider';
 import bookService from '../service/bookService';
 import notificationService from '../service/notificationService';
+import {readStoredAuthToken} from '../utils/authToken';
 import {
   deleteDownload,
   getDownload,
@@ -98,7 +99,7 @@ function safeLocalStorageGet(key: string): string | null {
 }
 
 function readAuthToken(): string | null {
-  return safeLocalStorageGet('token');
+  return readStoredAuthToken();
 }
 
 function hasAuthToken(): boolean {
@@ -619,22 +620,39 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
   );
 
   const openOffline = useCallback(async (bookId: string) => {
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      throw new Error('Popup blocked. Please allow popups to open the reader.');
+    }
+
     const normalized = normalizeBackendBookId(bookId);
     const legacy = legacyBackendBookId(bookId);
     const record = (await getDownload(normalized)) || (legacy ? await getDownload(legacy) : null);
-    if (!record) throw new Error('This book is not downloaded on this device.');
+    if (!record) {
+      try {
+        tab.close();
+      } catch {}
+      throw new Error('This book is not downloaded on this device.');
+    }
     const url = URL.createObjectURL(record.blob);
     try {
       openReaderTab({
         title: record.book?.title || 'Offline Read',
         url,
+        tab,
         tracking: {
           bookId: normalized,
           source: 'offline',
         },
       });
     } finally {
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      const pollId = window.setInterval(() => {
+        if (!tab.closed) return;
+        window.clearInterval(pollId);
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      }, 2000);
     }
   }, []);
 

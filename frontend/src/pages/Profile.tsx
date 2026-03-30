@@ -5,12 +5,12 @@ import {useLibrary} from '../context/LibraryContext';
 import CoverImage from '../components/CoverImage';
 import AvatarImage from '../components/AvatarImage';
 import profileService, {type ReadingActivityBucket, type ReadingActivityRange} from '../service/profileService';
-import authorService from '../service/authorService';
+import authorService, {type AuthorType} from '../service/authorService';
 import ProfileForm from '../components/profile/ProfileForm';
 import {useI18n} from '../i18n/I18nProvider';
 import authService from '../service/authService';
 import {hasAuthenticatedSession} from '../utils/readerUpgrade';
-import {FOLLOWING_AUTHORS_EVENT, listFollowingAuthorsFromCache} from '../utils/followingAuthors';
+import {FOLLOWING_AUTHORS_EVENT, listFollowingAuthorsFromCache, type FollowingAuthorSnapshot} from '../utils/followingAuthors';
 
 interface ProfileProps {
   user: {name: string; photo: string; membership: string; memberSince?: string};
@@ -66,6 +66,25 @@ function getLocalTimezone(): string {
   }
 }
 
+function mapFollowingSnapshots(items: FollowingAuthorSnapshot[], limit?: number): AuthorType[] {
+  const slice = typeof limit === 'number' ? items.slice(0, limit) : items;
+  return slice
+    .filter((item) => item && item.id)
+    .map((item) => {
+      const followers = typeof item.followers_count === 'number' ? item.followers_count : undefined;
+      const name = String(item.name || '').trim() || 'Unknown Author';
+      const photo = String(item.photo || '').trim() || undefined;
+      return {
+        id: item.id,
+        name,
+        photo,
+        followers,
+        followers_count: followers,
+        is_following: true,
+      };
+    });
+}
+
 export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) {
   const {t} = useI18n();
   const {books} = useLibrary();
@@ -88,6 +107,8 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
   const [authTick, setAuthTick] = React.useState(0);
   const [followingCount, setFollowingCount] = React.useState<number>(() => listFollowingAuthorsFromCache().length);
   const [followingLoading, setFollowingLoading] = React.useState(false);
+  const [followingAllOpen, setFollowingAllOpen] = React.useState(false);
+  const [followingAuthors, setFollowingAuthors] = React.useState<AuthorType[]>(() => mapFollowingSnapshots(listFollowingAuthorsFromCache()));
 
   const canUseAccountFeatures = React.useCallback(() => {
     try {
@@ -110,7 +131,11 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
   }, []);
 
   React.useEffect(() => {
-    const refreshFromCache = () => setFollowingCount(listFollowingAuthorsFromCache().length);
+    const refreshFromCache = () => {
+      const cached = listFollowingAuthorsFromCache();
+      setFollowingCount(cached.length);
+      setFollowingAuthors(mapFollowingSnapshots(cached));
+    };
     if (typeof window !== 'undefined') {
       window.addEventListener(FOLLOWING_AUTHORS_EVENT, refreshFromCache as EventListener);
       window.addEventListener('storage', refreshFromCache as EventListener);
@@ -125,8 +150,10 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
 
   React.useEffect(() => {
     let alive = true;
-    const cachedCount = listFollowingAuthorsFromCache().length;
+    const cached = listFollowingAuthorsFromCache();
+    const cachedCount = cached.length;
     setFollowingCount(cachedCount);
+    setFollowingAuthors(mapFollowingSnapshots(cached));
 
     if (!canUseAccountFeatures()) {
       setFollowingLoading(false);
@@ -143,10 +170,15 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
         const total = Number(response?.meta?.total);
         const count = Number.isFinite(total) && total >= 0 ? total : Array.isArray(response?.items) ? response.items.length : cachedCount;
         setFollowingCount(count);
+        if (Array.isArray(response?.items)) {
+          setFollowingAuthors(response.items);
+        }
       })
       .catch(() => {
         if (!alive) return;
-        setFollowingCount(listFollowingAuthorsFromCache().length);
+        const fallback = listFollowingAuthorsFromCache();
+        setFollowingCount(fallback.length);
+        setFollowingAuthors(mapFollowingSnapshots(fallback));
       })
       .finally(() => {
         if (alive) setFollowingLoading(false);
@@ -435,26 +467,136 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
         <div className="space-y-12">
           <section className="space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-text">{t('profile.friends')}</h3>
-              <button className="text-xs font-bold text-primary hover:underline">{t('profile.seeAll')}</button>
+              <h3 className="text-xl font-bold text-text">{t('profile.following')}</h3>
+              <button
+                type="button"
+                onClick={() => setFollowingAllOpen(true)}
+                disabled={followingAuthors.length === 0}
+                className="text-xs font-bold text-primary hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t('profile.seeAll')}
+              </button>
             </div>
             <div className="space-y-4">
-              {[1, 2, 3, 4].map((f) => (
-                <div key={f} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="size-10 rounded-full bg-surface border border-border" />
-                    <div>
-                      <p className="text-sm font-bold text-text">Friend Name {f}</p>
-                      <p className="text-[10px] text-text-muted">Reading: The Hobbit</p>
-                    </div>
-                  </div>
-                  <Icons.MessageSquare className="size-4 text-text-muted/20" />
+              {followingLoading ? (
+                <p className="text-sm font-semibold text-text-muted">{t('common.loading')}</p>
+              ) : followingAuthors.length === 0 ? (
+                <div className="rounded-2xl border border-border bg-surface px-4 py-5 text-center">
+                  <p className="text-sm font-bold text-text">{t('profile.noFollowing')}</p>
+                  <p className="mt-1 text-xs text-text-muted">{t('profile.noFollowingHint')}</p>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('authors')}
+                    className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-primary/90"
+                  >
+                    <Icons.User className="size-4" />
+                    {t('profile.browseAuthors')}
+                  </button>
                 </div>
-              ))}
+              ) : (
+                followingAuthors.slice(0, 4).map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => onNavigate('author-details', {id: a.id, name: a.name})}
+                    className="w-full flex items-center justify-between rounded-2xl border border-border bg-surface px-3 py-3 text-left hover:border-primary/30 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <AvatarImage
+                        src={String(a.photo || '')}
+                        alt={a.name}
+                        className="size-10 rounded-full border border-border object-cover"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-text">{a.name}</p>
+                        <p className="text-[10px] text-text-muted">
+                          {t('profile.followersCount', {
+                            count: (a.followers_count ?? a.followers ?? 0).toLocaleString(),
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <Icons.ChevronRight className="size-4 text-text-muted/50" />
+                  </button>
+                ))
+              )}
             </div>
           </section>
         </div>
       </div>
+
+      {followingAllOpen ? (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/60 px-4 py-10 overflow-y-auto backdrop-blur-md">
+          <div className="w-full max-w-xl rounded-3xl border border-border bg-bg shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border px-6 py-5">
+              <div className="flex items-center gap-2">
+                <Icons.User className="size-5 text-primary" />
+                <h4 className="text-base font-black text-text">{t('profile.following')}</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFollowingAllOpen(false)}
+                className="rounded-xl border border-border bg-surface p-2 text-text-muted hover:text-text hover:bg-white/5 transition-all"
+                aria-label="Close"
+              >
+                <Icons.X className="size-4" />
+              </button>
+            </div>
+            <div className="px-6 py-6">
+              {followingLoading ? (
+                <p className="text-sm font-semibold text-text-muted">{t('common.loading')}</p>
+              ) : followingAuthors.length === 0 ? (
+                <div className="rounded-2xl border border-border bg-surface px-4 py-6 text-center">
+                  <p className="text-sm font-bold text-text">{t('profile.noFollowing')}</p>
+                  <p className="mt-1 text-xs text-text-muted">{t('profile.noFollowingHint')}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFollowingAllOpen(false);
+                      onNavigate('authors');
+                    }}
+                    className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-primary/90"
+                  >
+                    <Icons.User className="size-4" />
+                    {t('profile.browseAuthors')}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {followingAuthors.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setFollowingAllOpen(false);
+                        onNavigate('author-details', {id: a.id, name: a.name});
+                      }}
+                      className="w-full flex items-center justify-between rounded-2xl border border-border bg-surface px-3 py-3 text-left hover:border-primary/30 transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <AvatarImage
+                          src={String(a.photo || '')}
+                          alt={a.name}
+                          className="size-10 rounded-full border border-border object-cover"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-text">{a.name}</p>
+                          <p className="text-[10px] text-text-muted">
+                            {t('profile.followersCount', {
+                              count: (a.followers_count ?? a.followers ?? 0).toLocaleString(),
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <Icons.ChevronRight className="size-4 text-text-muted/50" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

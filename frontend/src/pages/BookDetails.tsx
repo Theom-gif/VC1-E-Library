@@ -452,25 +452,28 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
 
   React.useEffect(() => {
     const authorName = pickString(currentBook.author);
+    const authorId = pickString(currentBook.authorId);
     if (!authorName) {
       setAuthorPhoto('');
       setAuthorInfo(null);
       return;
     }
-    const cached = authorPhotoCache.get(authorName);
+    const cacheKey = authorId ? `id:${authorId}` : `name:${authorName}`;
+    const cached = authorPhotoCache.get(cacheKey);
     if (cached) {
       setAuthorPhoto(cached);
-      setAuthorInfo((prev) => prev || {name: authorName, photo: cached});
+      setAuthorInfo((prev) => prev || {id: authorId || prev?.id, name: authorName, photo: cached});
       return;
     }
 
     let alive = true;
-    void authorService
-      .getByName(authorName)
+    const loadAuthor = authorId ? authorService.getById(authorId) : authorService.getByName(authorName);
+
+    void loadAuthor
       .then((author) => {
         if (!alive) return;
         const next = String(author?.photo || '').trim() || fallbackProfilePhoto(authorName, 100);
-        authorPhotoCache.set(authorName, next);
+        authorPhotoCache.set(cacheKey, next);
         setAuthorPhoto(next);
         setAuthorInfo(
           author
@@ -492,7 +495,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       .catch(() => {
         if (!alive) return;
         const next = fallbackProfilePhoto(authorName, 100);
-        authorPhotoCache.set(authorName, next);
+        authorPhotoCache.set(cacheKey, next);
         setAuthorPhoto(next);
         setAuthorInfo((prev) => prev || {name: authorName, photo: next});
       });
@@ -502,12 +505,8 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     };
   }, [currentBook.author]);
 
-  const isFollowing =
-    typeof authorInfo?.is_following === 'boolean'
-      ? authorInfo.is_following
-      : authorInfo?.id
-        ? isFollowingAuthor(authorInfo.id)
-        : false;
+  const cachedIsFollowing = authorInfo?.id ? isFollowingAuthor(authorInfo.id) : false;
+  const isFollowing = Boolean(authorInfo?.is_following) || cachedIsFollowing;
 
   const toggleFollow = async () => {
     const authorId = String(authorInfo?.id || '').trim();
@@ -523,6 +522,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     setIsTogglingFollow(true);
     try {
       const result = isFollowing ? await authorService.unfollow(authorId) : await authorService.follow(authorId);
+      const canonicalAuthorId = String((result as any)?.author_id || authorId).trim() || authorId;
       const nextFollowers =
         typeof result.followers_count === 'number'
           ? result.followers_count
@@ -536,10 +536,17 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             }
           : prev,
       );
+      const nextFollowing = Boolean(result.is_following);
       setFollowingAuthor(
         {id: authorId, name: authorName, photo: pickString(authorInfo?.photo, authorPhoto), followers_count: nextFollowers},
-        Boolean(result.is_following),
+        nextFollowing,
       );
+      if (canonicalAuthorId !== authorId) {
+        setFollowingAuthor(
+          {id: canonicalAuthorId, name: authorName, photo: pickString(authorInfo?.photo, authorPhoto), followers_count: nextFollowers},
+          nextFollowing,
+        );
+      }
     } catch (error: any) {
       const status = Number(error?.status);
       if (status === 401 || status === 403) {
@@ -1141,16 +1148,26 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       return;
     }
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
-    const url = await bookService.readUrl(normalizedBookId);
-    openReaderTab({
-      title: currentBook.title || 'Read',
-      url,
-      tracking: {
-        bookId: normalizedBookId,
-        source: 'web',
-      },
-    });
-    trackRead(normalizedBookId);
+    const tab = window.open('', '_blank');
+    if (!tab) throw new Error('Popup blocked. Please allow popups to open the reader.');
+    try {
+      const url = await bookService.readUrl(normalizedBookId);
+      openReaderTab({
+        title: currentBook.title || 'Read',
+        url,
+        tab,
+        tracking: {
+          bookId: normalizedBookId,
+          source: 'web',
+        },
+      });
+      trackRead(normalizedBookId);
+    } catch (err) {
+      try {
+        tab.close();
+      } catch {}
+      throw err;
+    }
   };
 
   return (
@@ -1264,7 +1281,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <div className="flex items-center gap-6">
               <div 
                 className="flex items-center gap-3 cursor-pointer group/author"
-                onClick={() => onNavigate('author-details', currentBook.author)}
+                onClick={() =>
+                  onNavigate('author-details', currentBook.authorId ? {id: currentBook.authorId, name: currentBook.author} : currentBook.author)
+                }
               >
                 <div className="size-10 rounded-full bg-surface border border-border overflow-hidden group-hover/author:border-primary transition-colors">
                   <img

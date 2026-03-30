@@ -86,6 +86,7 @@ export interface BookType {
   id: string;
   title: string;
   author: string;
+  authorId?: string;
   cover: string;
   category: string;
   rating: number;

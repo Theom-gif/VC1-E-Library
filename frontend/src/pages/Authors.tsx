@@ -33,7 +33,16 @@ export default function Authors({onNavigate}: AuthorsProps) {
   );
   const [reloadTick, setReloadTick] = React.useState(0);
 
-  const [followingAuthors, setFollowingAuthors] = React.useState<AuthorType[]>([]);
+  const [followingAuthors, setFollowingAuthors] = React.useState<AuthorType[]>(() =>
+    listFollowingAuthorsFromCache().map((item) => ({
+      id: item.id,
+      name: item.name || 'Unknown Author',
+      photo: item.photo,
+      followers: item.followers_count,
+      followers_count: item.followers_count,
+      is_following: true,
+    })),
+  );
   const [followingError, setFollowingError] = React.useState('');
   const [isLoadingFollowing, setIsLoadingFollowing] = React.useState(false);
   const [followingReloadTick, setFollowingReloadTick] = React.useState(0);
@@ -83,7 +92,8 @@ export default function Authors({onNavigate}: AuthorsProps) {
       );
     };
 
-    if (!canUseAccountFeatures()) {
+    const token = authService.getToken();
+    if (!token) {
       fromCache();
       setIsLoadingFollowing(false);
       return () => {
@@ -95,13 +105,16 @@ export default function Authors({onNavigate}: AuthorsProps) {
       .listFollowing({per_page: 20})
       .then((response) => {
         if (!alive) return;
-        setFollowingAuthors(response.items);
+        if (Array.isArray(response?.items) && response.items.length > 0) {
+          setFollowingAuthors(response.items);
+        } else {
+          fromCache();
+        }
       })
       .catch((e: any) => {
         if (!alive) return;
         const status = Number(e?.status);
         if (status === 401 || status === 403) {
-          setFollowingError('Login required to load following authors.');
           fromCache();
           return;
         }
@@ -131,6 +144,7 @@ export default function Authors({onNavigate}: AuthorsProps) {
     const currentlyFollowing = Boolean(author?.is_following) || isFollowingAuthor(authorId);
     try {
       const result = currentlyFollowing ? await authorService.unfollow(authorId) : await authorService.follow(authorId);
+      const canonicalAuthorId = String((result as any)?.author_id || authorId).trim() || authorId;
       const nextFollowing = Boolean(result.is_following);
       const nextFollowers =
         typeof result.followers_count === 'number'
@@ -151,6 +165,9 @@ export default function Authors({onNavigate}: AuthorsProps) {
       });
 
       setFollowingAuthor({id: authorId, name: author.name, photo: author.photo, followers_count: nextFollowers}, nextFollowing);
+      if (canonicalAuthorId !== authorId) {
+        setFollowingAuthor({id: canonicalAuthorId, name: author.name, photo: author.photo, followers_count: nextFollowers}, nextFollowing);
+      }
     } catch (e: any) {
       const status = Number(e?.status);
       if (status === 401 || status === 403) {
@@ -238,6 +255,7 @@ export default function Authors({onNavigate}: AuthorsProps) {
         </div>
       </section>
 
+      {followingAuthors.length ? (
       <section className="rounded-3xl border border-border bg-surface p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -254,18 +272,10 @@ export default function Authors({onNavigate}: AuthorsProps) {
               type="button"
               className="rounded-xl border border-border bg-bg/70 px-4 py-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text"
               onClick={() => refreshFollowing()}
+              disabled={isLoadingFollowing}
             >
-              Refresh
+              {isLoadingFollowing ? 'Refreshing...' : 'Refresh'}
             </button>
-            {!canUseAccountFeatures() ? (
-              <button
-                type="button"
-                className="rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-primary/90"
-                onClick={() => requestAuth('feature', {returnTo: {page: 'authors'}})}
-              >
-                Login
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -275,49 +285,40 @@ export default function Authors({onNavigate}: AuthorsProps) {
           </div>
         ) : null}
 
-        {isLoadingFollowing ? (
-          <div className="mt-6 rounded-2xl border border-border bg-bg/60 px-4 py-8 text-center text-sm text-text-muted">
-            Loading following authors...
-          </div>
-        ) : followingAuthors.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-border bg-bg/60 px-4 py-8 text-center text-sm text-text-muted">
-            You are not following any authors yet.
-          </div>
-        ) : (
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {followingAuthors.slice(0, 6).map((author) => (
-              <article key={author.id} className="rounded-2xl border border-border bg-bg/60 p-4">
-                <div className="flex items-center gap-3">
-                  <AvatarImage src={author.photo || ''} alt={author.name} className="size-12 rounded-full border border-border object-cover" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-black text-text">{author.name}</p>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">
-                      {formatFollowers(author.followers_count ?? author.followers)} followers
-                    </p>
-                  </div>
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {followingAuthors.slice(0, 6).map((author) => (
+            <article key={author.id} className="rounded-2xl border border-border bg-bg/60 p-4">
+              <div className="flex items-center gap-3">
+                <AvatarImage src={author.photo || ''} alt={author.name} className="size-12 rounded-full border border-border object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-text">{author.name}</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">
+                    {formatFollowers(author.followers_count ?? author.followers)} followers
+                  </p>
                 </div>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    className="flex-1 rounded-xl bg-primary px-3 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-primary/90"
-                    onClick={() => onNavigate('author-details', {id: author.id, name: author.name})}
-                  >
-                    View
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-border bg-surface px-3 py-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text"
-                    onClick={() => void toggleFollow(author)}
-                    title="Unfollow"
-                  >
-                    Unfollow
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-xl bg-primary px-3 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-primary/90"
+                  onClick={() => onNavigate('author-details', {id: author.id, name: author.name})}
+                >
+                  View
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl border border-border bg-surface px-3 py-2 text-xs font-black uppercase tracking-widest text-text-muted hover:text-text"
+                  onClick={() => void toggleFollow(author)}
+                  title="Unfollow"
+                >
+                  Unfollow
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
+      ) : null}
 
       {source === 'users-role-fallback' && !error ? (
         <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-text-muted">

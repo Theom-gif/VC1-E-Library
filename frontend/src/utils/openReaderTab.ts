@@ -1,8 +1,10 @@
 import readingSessionService, {type ReadingSessionSource} from '../service/readingSessionService';
+import {readStoredAuthToken} from './authToken';
 
 type OpenReaderTabArgs = {
   title: string;
   url: string;
+  tab?: Window | null;
   tracking?: {
     bookId: string;
     source: ReadingSessionSource;
@@ -23,17 +25,7 @@ function escapeHtml(value: string): string {
 }
 
 function readToken(): string | null {
-  try {
-    const token =
-      localStorage.getItem('token') ||
-      localStorage.getItem('access_token') ||
-      localStorage.getItem('accessToken') ||
-      localStorage.getItem('auth_token');
-    const normalized = String(token ?? '').trim();
-    return normalized || null;
-  } catch {
-    return null;
-  }
+  return readStoredAuthToken();
 }
 
 function wireReadingTracking(
@@ -130,7 +122,7 @@ function wireReadingTracking(
   void startSession();
 }
 
-export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
+export function openReaderTab({title, url, tracking, tab: providedTab}: OpenReaderTabArgs) {
   const safeTitle = escapeHtml(title || 'Reader');
   const safeAppTitle = escapeHtml(APP_TAB_TITLE);
   const safeFaviconSrc = escapeHtml(FAVICON_SRC);
@@ -138,7 +130,7 @@ export function openReaderTab({title, url, tracking}: OpenReaderTabArgs) {
   const trackingId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const safeTrackingId = escapeHtml(trackingId);
 
-  const tab = window.open('', '_blank');
+  const tab = providedTab && !providedTab.closed ? providedTab : window.open('', '_blank');
   if (!tab) {
     throw new Error('Popup blocked. Please allow popups to open the reader.');
   }

@@ -74,6 +74,18 @@ export function toBookType(raw: any): BookType {
 
   const id = pickString(normalized?.id, normalized?.book_id, normalized?._id, normalized?.uuid);
   const title = pickString(normalized?.title, normalized?.name);
+  const authorId = pickString(
+    normalized?.author?.id,
+    normalized?.author_id,
+    normalized?.authorId,
+    normalized?.author?.author_id,
+    normalized?.author?.user_id,
+    normalized?.author?.userId,
+    normalized?.author_user_id,
+    normalized?.created_by_id,
+    normalized?.createdById,
+    normalized?.created_by?.id,
+  );
   const author = pickString(normalized?.author?.name, normalized?.author_name, normalized?.author);
   const category = pickString(normalized?.category?.name, normalized?.category_name, normalized?.category, 'Uncategorized');
   const cover = pickCoverValue(normalized);
@@ -82,6 +94,7 @@ export function toBookType(raw: any): BookType {
     id: id || `book_${Date.now()}`,
     title: title || 'Untitled',
     author: author || 'Unknown',
+    authorId: authorId || undefined,
     cover: cover || '',
     category,
     rating: pickNumber(

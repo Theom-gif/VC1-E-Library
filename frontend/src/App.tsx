@@ -406,9 +406,43 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
         return;
       }
 
-      // Non-guest session but auth is missing (token cleared/expired): show login overlay.
-      setShowAccessPrompt(false);
-      setShowReauthPrompt(true);
+      // Logged-in session: only show re-auth UI when we're confident the token is truly missing/expired.
+      // Many endpoints may return 403 for permission/feature restrictions; that should not force a re-login prompt.
+      const token = authService.getToken();
+      if (!token) {
+        setShowReauthPrompt(false);
+        setAccessPromptReason(reason === 'feature' ? 'feature' : 'read-limit');
+        setShowAccessPrompt(true);
+        onLogout();
+        return;
+      }
+
+      void authService
+        .me()
+        .then(() => {
+          // Token still valid; ignore this auth-required signal.
+        })
+        .catch((requestError: any) => {
+          const status = Number(requestError?.status);
+          const rawMessage = String(
+            requestError?.data?.message || requestError?.message || requestError?.data?.error || '',
+          ).toLowerCase();
+          const looksExpired =
+            status === 401 ||
+            rawMessage.includes('unauthenticated') ||
+            rawMessage.includes('token expired') ||
+            rawMessage.includes('invalid token') ||
+            rawMessage.includes('expired token');
+
+          if (!looksExpired) return;
+
+          // If the token really expired, downgrade to guest and show the standard guest access prompt.
+          // This avoids repeatedly nagging logged-in Readers with a separate "session expired" modal.
+          setShowReauthPrompt(false);
+          setAccessPromptReason(reason === 'feature' ? 'feature' : 'read-limit');
+          setShowAccessPrompt(true);
+          onLogout();
+        });
     };
     if (typeof window !== 'undefined') {
       window.addEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
@@ -418,7 +452,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
         window.removeEventListener(AUTH_REQUIRED_EVENT, handleAuthRequired as EventListener);
       }
     };
-  }, [authUser?.id]);
+  }, [authUser?.id, onLogout]);
 
   React.useEffect(() => {
     const handleTierChange = (event: Event) => {

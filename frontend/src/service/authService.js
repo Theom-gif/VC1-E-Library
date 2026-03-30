@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import {normalizeAuthToken, readStoredAuthToken} from '../utils/authToken';
 
 const TOKEN_KEYS = new Set([
   'token',
@@ -51,10 +52,11 @@ const extractToken = (data) =>
   findTokenDeep(data);
 
 const storeToken = (token) => {
-  if (token) {
-    localStorage.setItem('token', token);
+  const normalized = normalizeAuthToken(token);
+  if (normalized) {
+    localStorage.setItem('token', normalized);
     try {
-      window.dispatchEvent(new CustomEvent('elibrary-token-changed', {detail: token}));
+      window.dispatchEvent(new CustomEvent('elibrary-token-changed', {detail: normalized}));
     } catch {
       // ignore
     }
@@ -68,6 +70,8 @@ const clearToken = () => {
   localStorage.removeItem('auth_token');
   localStorage.removeItem('jwt');
   localStorage.removeItem('bearer_token');
+  localStorage.removeItem('plainTextToken');
+  localStorage.removeItem('plain_text_token');
   try {
     window.dispatchEvent(new CustomEvent('elibrary-token-changed', {detail: null}));
   } catch {
@@ -142,13 +146,7 @@ export const authService = {
     throw lastError || new Error('Profile endpoint not found');
   },
 
-  getToken: () =>
-    localStorage.getItem('token') ||
-    localStorage.getItem('access_token') ||
-    localStorage.getItem('accessToken') ||
-    localStorage.getItem('auth_token') ||
-    localStorage.getItem('jwt') ||
-    localStorage.getItem('bearer_token'),
+  getToken: () => readStoredAuthToken(),
 
   setToken: (token) => storeToken(token),
 

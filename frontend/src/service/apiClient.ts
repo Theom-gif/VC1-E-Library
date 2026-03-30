@@ -1,3 +1,5 @@
+import {readStoredAuthToken} from '../utils/authToken';
+
 type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export type ApiClientOptions = Omit<RequestInit, 'method' | 'body'> & {
@@ -116,22 +118,6 @@ function isObject(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === 'object';
 }
 
-function readToken(): string | null {
-  try {
-    const token =
-      localStorage.getItem('token') ||
-      localStorage.getItem('access_token') ||
-      localStorage.getItem('accessToken') ||
-      localStorage.getItem('auth_token') ||
-      localStorage.getItem('jwt') ||
-      localStorage.getItem('bearer_token');
-    const normalized = String(token ?? '').trim();
-    return normalized || null;
-  } catch {
-    return null;
-  }
-}
-
 function isFormData(value: unknown): value is FormData {
   return typeof FormData !== 'undefined' && value instanceof FormData;
 }
@@ -144,7 +130,7 @@ async function request(method: ApiMethod, path: string, options: ApiClientOption
   const url = buildUrl(path);
   const shouldFallback = shouldFallbackToProduction(path, url);
   const fallbackUrl = shouldFallback ? buildProductionUrl(path) : '';
-  const token = readToken();
+  const token = readStoredAuthToken();
   const {headers: optionHeaders, timeoutMs = 20000, body, signal, auth = true, ...restOptions} = options || {};
 
   const extraHeaders =

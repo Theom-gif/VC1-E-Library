@@ -83,6 +83,7 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
   }, [initialAuthorId, initialAuthorName]);
 
   const displayName = pickString(authorData?.name, initialAuthorName, 'Unknown Author');
+  const resolvedAuthorId = pickString(authorData?.id, initialAuthorId);
 
   const allBooks = React.useMemo(() => {
     const map = new Map<string, BookType>();
@@ -94,9 +95,13 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
   }, [books, newArrivals]);
 
   const authorBooks = React.useMemo(() => {
+    if (resolvedAuthorId) {
+      const byId = allBooks.filter((book) => pickString(book.authorId) === resolvedAuthorId);
+      if (byId.length) return byId;
+    }
     const target = displayName.toLowerCase();
     return allBooks.filter((book) => pickString(book.author).toLowerCase() === target);
-  }, [allBooks, displayName]);
+  }, [allBooks, displayName, resolvedAuthorId]);
 
   const [relatedAuthors, setRelatedAuthors] = React.useState<AuthorType[]>([]);
 
@@ -141,12 +146,8 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
   const authorPhoto = pickString(authorData?.photo);
 
   const authorId = pickString(authorData?.id, initialAuthorId);
-  const isFollowing =
-    typeof authorData?.is_following === 'boolean'
-      ? authorData.is_following
-      : authorId
-        ? isFollowingAuthor(authorId)
-        : false;
+  const cachedIsFollowing = authorId ? isFollowingAuthor(authorId) : false;
+  const isFollowing = Boolean(authorData?.is_following) || cachedIsFollowing;
   const [isTogglingFollow, setIsTogglingFollow] = React.useState(false);
 
   const canUseAccountFeatures = () => {
@@ -168,6 +169,7 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
     setIsTogglingFollow(true);
     try {
       const result = isFollowing ? await authorService.unfollow(authorId) : await authorService.follow(authorId);
+      const canonicalAuthorId = String((result as any)?.author_id || authorId).trim() || authorId;
       const nextFollowers =
         typeof result.followers_count === 'number'
           ? result.followers_count
@@ -182,7 +184,11 @@ export default function AuthorDetails({author, onNavigate}: AuthorDetailsProps) 
             }
           : prev,
       );
-      setFollowingAuthor({id: authorId, name: displayName, photo: authorPhoto || undefined, followers_count: nextFollowers}, Boolean(result.is_following));
+      const nextFollowing = Boolean(result.is_following);
+      setFollowingAuthor({id: authorId, name: displayName, photo: authorPhoto || undefined, followers_count: nextFollowers}, nextFollowing);
+      if (canonicalAuthorId !== authorId) {
+        setFollowingAuthor({id: canonicalAuthorId, name: displayName, photo: authorPhoto || undefined, followers_count: nextFollowers}, nextFollowing);
+      }
     } catch (error: any) {
       const status = Number(error?.status);
       if (status === 401 || status === 403) {
