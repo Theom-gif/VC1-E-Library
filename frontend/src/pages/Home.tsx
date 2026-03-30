@@ -24,6 +24,38 @@ interface HomeProps {
   onAuthSuccess?: () => void;
 }
 
+function extractAuthErrorText(err: any, fallback: string) {
+  const errors = err?.data?.errors;
+  if (errors && typeof errors === 'object') {
+    const emailErrorsRaw = (errors as any)?.email;
+    const emailErrorsText = Array.isArray(emailErrorsRaw)
+      ? emailErrorsRaw.map((m) => String(m || '').trim()).filter(Boolean).join(' ')
+      : String(emailErrorsRaw || '').trim();
+    if (emailErrorsText && /already/i.test(emailErrorsText) && /(taken|exist|registered)/i.test(emailErrorsText)) {
+      return 'This email is already registered. Please use Login instead.';
+    }
+
+    const messages = Object.values(errors)
+      .flatMap((entry) => (Array.isArray(entry) ? entry : [entry]))
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean);
+    if (messages.length) return messages.slice(0, 3).join(' ');
+  }
+
+  const message =
+    typeof err === 'string'
+      ? err.trim()
+      : String(err?.data?.message || err?.data?.error || err?.message || '').trim();
+  if (message) {
+    if (/failed to fetch/i.test(message)) {
+      return 'Cannot connect to the backend API. Start the backend (npm run dev / npm run dev:backend) and check VITE_API_URL/VITE_API_BASE_URL, proxy, and CORS.';
+    }
+    return message;
+  }
+
+  return fallback;
+}
+
 export default function Home({
   onNavigate,
   onLogin,
@@ -125,11 +157,7 @@ export default function Home({
   }, [canShowAuthOverlay, initialAuthMode]);
 
   const getAuthError = (err: any) => {
-    if (!err) return 'Unable to login. Please check your credentials.';
-    if (typeof err === 'string') return err;
-    if (err?.data?.message) return String(err.data.message);
-    if (err?.message) return String(err.message);
-    return 'Unable to login. Please check your credentials.';
+    return extractAuthErrorText(err, 'Unable to login. Please check your credentials.');
   };
 
   const handleLoginSubmit = async (event: React.FormEvent<HTMLFormElement>) => {

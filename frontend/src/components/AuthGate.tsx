@@ -168,15 +168,31 @@ function pickDateString(...values: unknown[]): string | undefined {
 }
 
 function extractErrorText(error: any, fallback: string): string {
+  const rawMessage =
+    typeof error === 'string'
+      ? error.trim()
+      : String(error?.data?.message || error?.data?.error || error?.message || '').trim();
+  if (rawMessage && /failed to fetch/i.test(rawMessage)) {
+    return 'Cannot connect to the backend API. Start the backend and check VITE_API_URL/VITE_API_BASE_URL, proxy, and CORS.';
+  }
+
   const errors = error?.data?.errors;
   if (errors && typeof errors === 'object') {
+    const emailErrorsRaw = (errors as any)?.email;
+    const emailErrorsText = Array.isArray(emailErrorsRaw)
+      ? emailErrorsRaw.map((m: any) => String(m || '').trim()).filter(Boolean).join(' ')
+      : String(emailErrorsRaw || '').trim();
+    if (emailErrorsText && /already/i.test(emailErrorsText) && /(taken|exist|registered)/i.test(emailErrorsText)) {
+      return 'This email is already registered. Please use Login instead.';
+    }
+
     const messages = Object.values(errors)
       .flatMap((entry) => (Array.isArray(entry) ? entry : [entry]))
       .map((entry) => String(entry || '').trim())
       .filter(Boolean);
     if (messages.length) return messages.slice(0, 3).join(' ');
   }
-  return error?.data?.message || error?.data?.error || error?.message || fallback;
+  return rawMessage || fallback;
 }
 
 function isRoleValidationError(error: any): boolean {

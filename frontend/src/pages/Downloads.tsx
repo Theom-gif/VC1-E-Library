@@ -29,6 +29,7 @@ function formatSpeed(value: number) {
 
 export default function Downloads({onNavigate}: DownloadsProps) {
   const {active, completed, storageUsed, pause, resume, cancel, remove, openOffline} = useDownloads();
+  const hasActiveDownloads = active.length > 0;
 
   const totalCapacityBytes = 10 * 1024 * 1024 * 1024;
   const storageLabel = `${formatBytes(storageUsed)} / 10 GB`;
@@ -56,80 +57,80 @@ export default function Downloads({onNavigate}: DownloadsProps) {
       </div>
 
       <div className="space-y-8">
-        <section className="space-y-4">
-          <h3 className="text-lg font-bold flex items-center gap-2 text-text">
-            Active Downloads
-            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{active.length}</span>
-          </h3>
+        {hasActiveDownloads ? (
+          <section className="space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-text">
+              Active Downloads
+              <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">{active.length}</span>
+            </h3>
 
-          <div className="space-y-3">
-            {active.length === 0 ? (
-              <div className="p-10 rounded-2xl bg-surface border border-border text-center text-sm text-text-muted">
-                No active downloads. Start a download from any book.
-              </div>
-            ) : null}
+            <div className="space-y-3">
+              {active.map((item) => (
+                <div key={item.bookId} className="p-4 rounded-2xl bg-surface border border-border flex items-center gap-6">
+                  <CoverImage src={item.book.cover} alt={item.book.title} className="w-12 h-16 object-cover rounded shadow-lg" />
 
-            {active.map((item) => (
-              <div key={item.bookId} className="p-4 rounded-2xl bg-surface border border-border flex items-center gap-6">
-                <CoverImage src={item.book.cover} alt={item.book.title} className="w-12 h-16 object-cover rounded shadow-lg" />
-
-                <div className="flex-1 space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-bold text-sm text-text">{item.book.title}</h4>
-                      <p className="text-[10px] text-text-muted">
-                        {item.book.author} {'\u2022'} {item.totalBytes ? formatBytes(item.totalBytes) : formatBytes(item.receivedBytes)}
-                      </p>
+                  <div className="flex-1 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-bold text-sm text-text">{item.book.title}</h4>
+                        <p className="text-[10px] text-text-muted">
+                          {item.book.author} {'\u2022'} {item.totalBytes ? formatBytes(item.totalBytes) : formatBytes(item.receivedBytes)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-bold text-primary">{item.progress}%</p>
+                        <p className="text-[10px] text-text-muted">
+                          {item.status === 'paused' ? 'Paused' : item.status === 'error' ? 'Failed' : formatSpeed(item.speedBytesPerSec)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-primary">{item.progress}%</p>
-                      <p className="text-[10px] text-text-muted">
-                        {item.status === 'paused' ? 'Paused' : item.status === 'error' ? 'Failed' : formatSpeed(item.speedBytesPerSec)}
-                      </p>
+
+                    <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          item.status === 'paused' ? 'bg-orange-500' : item.status === 'error' ? 'bg-red-500' : 'bg-primary'
+                        }`}
+                        style={{width: `${item.progress}%`}}
+                      />
                     </div>
+
+                    {item.error ? <p className="text-[10px] font-bold text-red-500">{item.error}</p> : null}
                   </div>
 
-                  <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        item.status === 'paused' ? 'bg-orange-500' : item.status === 'error' ? 'bg-red-500' : 'bg-primary'
-                      }`}
-                      style={{width: `${item.progress}%`}}
-                    />
-                  </div>
-
-                  {item.error ? <p className="text-[10px] font-bold text-red-500">{item.error}</p> : null}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {item.status === 'error' && item.downloadUrl ? (
+                  <div className="flex items-center gap-2">
+                    {item.status === 'error' && item.downloadUrl ? (
+                      <button
+                        className="p-2 rounded-lg bg-surface hover:bg-white/10 text-text-muted transition-all"
+                        onClick={() => window.open(item.downloadUrl, '_blank', 'noreferrer')}
+                        title="Open file in browser"
+                      >
+                        <Icons.ExternalLink className="size-4" />
+                      </button>
+                    ) : null}
                     <button
                       className="p-2 rounded-lg bg-surface hover:bg-white/10 text-text-muted transition-all"
-                      onClick={() => window.open(item.downloadUrl, '_blank', 'noreferrer')}
-                      title="Open file in browser"
+                      onClick={() => (item.status === 'downloading' ? pause(item.bookId) : resume(item.book))}
+                      title={item.status === 'downloading' ? 'Pause' : 'Resume'}
                     >
-                      <Icons.ExternalLink className="size-4" />
+                      {item.status === 'downloading' ? (
+                        <Icons.PauseCircle className="size-4" />
+                      ) : (
+                        <Icons.Rocket className="size-4" />
+                      )}
                     </button>
-                  ) : null}
-                  <button
-                    className="p-2 rounded-lg bg-surface hover:bg-white/10 text-text-muted transition-all"
-                    onClick={() => (item.status === 'downloading' ? pause(item.bookId) : resume(item.book))}
-                    title={item.status === 'downloading' ? 'Pause' : 'Resume'}
-                  >
-                    {item.status === 'downloading' ? <Icons.PauseCircle className="size-4" /> : <Icons.Rocket className="size-4" />}
-                  </button>
-                  <button
-                    className="p-2 rounded-lg bg-surface hover:bg-red-500/20 text-red-500 transition-all"
-                    onClick={() => cancel(item.bookId)}
-                    title="Cancel"
-                  >
-                    <Icons.XCircle className="size-4" />
-                  </button>
+                    <button
+                      className="p-2 rounded-lg bg-surface hover:bg-red-500/20 text-red-500 transition-all"
+                      onClick={() => cancel(item.bookId)}
+                      title="Cancel"
+                    >
+                      <Icons.XCircle className="size-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="space-y-4">
           <h3 className="text-lg font-bold flex items-center gap-2 text-text">
