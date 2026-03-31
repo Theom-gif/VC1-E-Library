@@ -9,6 +9,7 @@ export type StoredDownload = {
   createdAt: number;
   updatedAt: number;
   fileName?: string;
+  localIdentifier?: string;
 };
 
 const DB_NAME = 'elibrary_offline';
@@ -52,6 +53,13 @@ export async function putDownload(record: StoredDownload): Promise<void> {
 export async function getDownload(bookId: string): Promise<StoredDownload | null> {
   const result = await withStore('readonly', (store) => store.get(bookId));
   return (result as any) || null;
+}
+
+export async function getDownloadByLocalIdentifier(localIdentifier: string): Promise<StoredDownload | null> {
+  const normalized = String(localIdentifier || '').trim();
+  if (!normalized) return null;
+  const items = await listDownloads();
+  return items.find((item) => String(item?.localIdentifier || '').trim() === normalized) || null;
 }
 
 export async function deleteDownload(bookId: string): Promise<void> {

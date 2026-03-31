@@ -28,8 +28,11 @@ export type ListBooksParams = {
 export type ApiDownloadRecord = {
   id?: string | number;
   book_id?: string | number;
+  local_identifier?: string;
+  sync_status?: string;
   status?: string;
   book?: any;
+  read_url?: string;
   download_url?: string;
   stream_url?: string;
   url?: string;
@@ -42,6 +45,7 @@ export type CreateDownloadRecordPayload = {
   size_bytes?: number;
   file_name?: string;
   mime_type?: string;
+  local_identifier?: string;
 };
 
 async function with404Fallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
@@ -107,28 +111,16 @@ function asAbsoluteAssetUrl(value: string): string {
   return `${base}/storage/${normalized}`;
 }
 
-function asAbsoluteMaybeUrl(value: unknown): string {
-  const raw = String(value ?? '').trim();
+function asAbsoluteApiUrl(path: string): string {
+  const raw = String(path || '').trim();
   if (!raw) return '';
-  if (/^(https?:|data:)/i.test(raw)) return raw;
-  return asAbsoluteAssetUrl(raw);
-}
+  if (/^https?:\/\//i.test(raw)) return raw;
 
-function pickUrlFromObject(obj: any): string {
-  const direct = pickString(
-    obj?.read_url,
-    obj?.stream_url,
-    obj?.download_url,
-    obj?.file_url,
-    obj?.book_file_url,
-    obj?.pdf_url,
-    obj?.epub_url,
-    obj?.url,
-    obj?.file,
-    obj?.path,
-    obj?.file_path,
-  );
-  return asAbsoluteMaybeUrl(direct);
+  const base = String(API_BASE_URL || '').replace(/\/+$/, '');
+  if (!base) return raw.startsWith('/') ? raw : `/${raw.replace(/^\/+/, '')}`;
+
+  const normalized = raw.startsWith('/') ? raw : `/${raw.replace(/^\/+/, '')}`;
+  return `${base}${normalized}`;
 }
 
 function clampPositiveInteger(value: unknown): number | undefined {
@@ -296,6 +288,8 @@ export const bookService = {
       (path) => apiClient.post(path),
     ),
 
+  downloadFileUrl: (id: string) => asAbsoluteApiUrl(`/api/books/${encodeURIComponent(normalizeBookId(id))}/download-file`),
+
   listDownloads: async () =>
     (await apiClient.get('/api/downloads', {
       headers: {Accept: 'application/json'},
@@ -325,22 +319,7 @@ export const bookService = {
    */
   readUrl: async (id: string) => {
     const encodedId = encodeURIComponent(normalizeBookId(id));
-
-    // 1) Try book details first (some APIs include `file_url` etc).
-    try {
-      const details = await apiClient.get(`/api/books/${encodedId}`, {headers: {Accept: 'application/json'}});
-      const urlFromDetails = pickUrlFromObject((details as any)?.data ?? details);
-      if (urlFromDetails) return urlFromDetails;
-    } catch {
-      // Ignore and try download endpoint.
-    }
-
-    // 2) Fallback: use the download endpoint (expected to return a public/signed URL).
-    const payload = await bookService.download(encodedId);
-    const urlFromDownload = pickUrlFromObject((payload as any)?.data ?? payload);
-    if (urlFromDownload) return urlFromDownload;
-
-    throw new Error('Backend did not return a readable URL. Expected `read_url`, `stream_url`, or `download_url`.');
+    return asAbsoluteApiUrl(`/api/books/${encodedId}/read`);
   },
 };
 

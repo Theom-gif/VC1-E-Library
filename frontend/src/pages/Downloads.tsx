@@ -2,6 +2,7 @@ import React from 'react';
 import {Icons} from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import CoverImage from '../components/CoverImage';
+import {openReaderTab} from '../utils/openReaderTab';
 import {requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 
 interface DownloadsProps {
@@ -28,7 +29,7 @@ function formatSpeed(value: number) {
 }
 
 export default function Downloads({onNavigate}: DownloadsProps) {
-  const {active, completed, storageUsed, pause, resume, cancel, remove, openOffline} = useDownloads();
+  const {active, downloadedBooks, storageUsed, pause, resume, cancel, remove, openOffline} = useDownloads();
   const hasActiveDownloads = active.length > 0;
 
   const totalCapacityBytes = 10 * 1024 * 1024 * 1024;
@@ -135,17 +136,17 @@ export default function Downloads({onNavigate}: DownloadsProps) {
         <section className="space-y-4">
           <h3 className="text-lg font-bold flex items-center gap-2 text-text">
             Completed
-            <span className="px-2 py-0.5 rounded-full bg-surface text-text-muted text-[10px] font-bold">{completed.length}</span>
+            <span className="px-2 py-0.5 rounded-full bg-surface text-text-muted text-[10px] font-bold">{downloadedBooks.length}</span>
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {completed.length === 0 ? (
+            {downloadedBooks.length === 0 ? (
               <div className="md:col-span-2 p-10 rounded-2xl bg-surface border border-border text-center text-sm text-text-muted">
-                No offline books yet. Download a book to read it offline.
+                No downloaded books yet. Download a book to read it offline.
               </div>
             ) : null}
 
-            {completed.map((item) => (
+            {downloadedBooks.map((item) => (
               <div
                 key={item.bookId}
                 className="group p-4 rounded-2xl bg-surface border border-border hover:border-primary/30 transition-all flex items-center gap-4 cursor-pointer"
@@ -154,13 +155,52 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                     requestAuth('read-limit');
                     return;
                   }
-                  openOffline(item.bookId)
-                    .then(() => {
-                      trackRead(item.bookId);
-                    })
-                    .catch(() => onNavigate('book-details', item.book));
+                  if (item.localIdentifier || item.isDownloaded) {
+                    openOffline(item.bookId, item.localIdentifier)
+                      .then(() => {
+                        trackRead(item.bookId);
+                      })
+                      .catch(() => {
+                        const fallbackUrl = item.readUrl || item.streamUrl || item.downloadUrl;
+                        if (!fallbackUrl) {
+                          onNavigate('book-details', item.book);
+                          return;
+                        }
+                        const tab = window.open('', '_blank');
+                        if (!tab) {
+                          onNavigate('book-details', item.book);
+                          return;
+                        }
+                        openReaderTab({
+                          title: item.book.title || 'Read',
+                          url: fallbackUrl,
+                          tab,
+                          tracking: {bookId: item.bookId, source: 'web'},
+                        });
+                        trackRead(item.bookId);
+                      });
+                    return;
+                  }
+
+                  const fallbackUrl = item.readUrl || item.streamUrl || item.downloadUrl;
+                  if (!fallbackUrl) {
+                    onNavigate('book-details', item.book);
+                    return;
+                  }
+                  const tab = window.open('', '_blank');
+                  if (!tab) {
+                    onNavigate('book-details', item.book);
+                    return;
+                  }
+                  openReaderTab({
+                    title: item.book.title || 'Read',
+                    url: fallbackUrl,
+                    tab,
+                    tracking: {bookId: item.bookId, source: 'web'},
+                  });
+                  trackRead(item.bookId);
                 }}
-                title="Open offline"
+                title={item.isDownloaded ? 'Open offline' : 'Open online'}
               >
                 <CoverImage src={item.book.cover} alt={item.book.title} className="w-16 h-24 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" />
 
@@ -170,31 +210,33 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-1 text-[10px] font-bold text-text-muted">
                       <Icons.BookOpen className="size-3" />
-                      {formatBytes(item.sizeBytes)}
+                      {formatBytes(item.sizeBytes || 0)}
                     </div>
                     <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
                       <Icons.Star className="size-3 fill-emerald-500" />
-                      Offline Ready
+                      {item.isDownloaded ? 'Offline Ready' : item.syncStatus || 'Synced'}
                     </div>
                   </div>
                 </div>
 
-                <button
-                  className="p-2 rounded-lg bg-surface hover:bg-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-all"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void remove(item.bookId);
-                  }}
-                  title="Remove from device"
-                >
-                  <Icons.Trash2 className="size-4" />
-                </button>
+                {item.isDownloaded ? (
+                  <button
+                    className="p-2 rounded-lg bg-surface hover:bg-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-all"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void remove(item.bookId);
+                    }}
+                    title="Remove from device"
+                  >
+                    <Icons.Trash2 className="size-4" />
+                  </button>
+                ) : null}
               </div>
             ))}
           </div>
         </section>
 
-        {completed.length > 0 ? (
+        {downloadedBooks.length > 0 ? (
           <div className="pt-6 border-t border-border flex justify-center">
             <button
               onClick={() => onNavigate('home')}

@@ -2,12 +2,13 @@ import React, {createContext, useCallback, useContext, useMemo, useRef, useState
 import type {BookType} from '../types';
 import {API_BASE_URL} from '../service/apiClient';
 import {useToast} from '../components/ToastProvider';
-import bookService from '../service/bookService';
+import bookService, {type ApiDownloadRecord} from '../service/bookService';
 import notificationService from '../service/notificationService';
 import {readStoredAuthToken} from '../utils/authToken';
 import {
   deleteDownload,
   getDownload,
+  getDownloadByLocalIdentifier,
   listDownloads,
   putDownload,
   storageUsedBytes,
@@ -15,6 +16,7 @@ import {
 } from '../offline/downloadsDb';
 import {openReaderTab} from '../utils/openReaderTab';
 import readingSessionService from '../service/readingSessionService';
+import {toBookType} from '../service/bookMapper';
 
 type ActiveDownloadStatus = 'downloading' | 'paused' | 'error';
 
@@ -75,19 +77,37 @@ function emitLocalNotification(notification: LocalNotification) {
 type DownloadState = {
   active: ActiveDownload[];
   completed: StoredDownload[];
+  downloadedBooks: DownloadedBook[];
   storageUsed: number;
   startDownload: (book: BookType) => Promise<void>;
   pause: (bookId: string) => void;
   resume: (book: BookType) => Promise<void>;
   cancel: (bookId: string) => void;
   remove: (bookId: string) => Promise<void>;
-  openOffline: (bookId: string) => Promise<void>;
+  openOffline: (bookId: string, localIdentifier?: string) => Promise<void>;
   isDownloaded: (bookId: string) => boolean;
   activeById: (bookId: string) => ActiveDownload | null;
   refresh: () => Promise<void>;
 };
 
 const DownloadContext = createContext<DownloadState | null>(null);
+
+export type DownloadedBook = {
+  bookId: string;
+  book: BookType;
+  localIdentifier?: string;
+  blob?: Blob | null;
+  mimeType?: string;
+  sizeBytes?: number;
+  createdAt: number;
+  updatedAt: number;
+  fileName?: string;
+  syncStatus?: string;
+  readUrl?: string;
+  streamUrl?: string;
+  downloadUrl?: string;
+  isDownloaded?: boolean;
+};
 
 function safeLocalStorageGet(key: string): string | null {
   try {
@@ -125,6 +145,160 @@ function legacyBackendBookId(value: unknown): string {
   return normalized ? `api-${normalized}` : '';
 }
 
+function asAbsoluteApiUrl(path: string): string {
+  const raw = String(path || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  const base = String(API_BASE_URL || '').trim().replace(/\/+$/, '');
+  const origin = currentWindowOrigin();
+  const effectiveBase = base || origin;
+  const normalized = raw.startsWith('/') ? raw : `/${raw.replace(/^\/+/, '')}`;
+
+  if (!effectiveBase) return normalized;
+  return `${effectiveBase}${normalized}`;
+}
+
+function generateLocalIdentifier(bookId: string): string {
+  const normalizedBookId = normalizeBackendBookId(bookId);
+  const randomPart =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2, 10);
+  return `local-file://${normalizedBookId || 'book'}-${Date.now().toString(36)}-${randomPart}`;
+}
+
+function pickDownloadUrl(record: any): string {
+  return pickString(
+    record?.read_url,
+    record?.stream_url,
+    record?.download_url,
+    record?.url,
+    record?.book?.read_url,
+    record?.book?.stream_url,
+    record?.book?.download_url,
+    record?.data?.read_url,
+    record?.data?.stream_url,
+    record?.data?.download_url,
+  );
+}
+
+function pickDownloadLocalIdentifier(record: any): string {
+  return pickString(record?.local_identifier, record?.data?.local_identifier, record?.book?.local_identifier);
+}
+
+function pickDownloadStatus(record: any): string {
+  return pickString(record?.sync_status, record?.status, record?.data?.sync_status, record?.data?.status);
+}
+
+function pickDownloadSizeBytes(record: any): number {
+  const value = Number(
+    record?.size_bytes ?? record?.file_size ?? record?.bytes ?? record?.size ?? record?.data?.size_bytes ?? record?.data?.file_size,
+  );
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function pickDownloadFileName(record: any): string {
+  return pickString(record?.file_name, record?.filename, record?.book?.file_name, record?.book?.filename);
+}
+
+function normalizeDownloadedBook(raw: ApiDownloadRecord | any, localRecord?: StoredDownload | null): DownloadedBook | null {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const bookSource = source?.book ?? source?.data?.book ?? source?.data ?? source;
+  const book = toBookType(bookSource);
+  const bookId = normalizeBackendBookId(source?.book_id ?? bookSource?.id ?? book.id ?? localRecord?.bookId);
+  if (!bookId) return null;
+
+  const localIdentifier = pickDownloadLocalIdentifier(source) || String(localRecord?.localIdentifier || '').trim() || undefined;
+  const readUrl = asAbsoluteApiUrl(pickDownloadUrl(source) || `/api/books/${encodeURIComponent(bookId)}/read`);
+  const downloadUrl = asAbsoluteApiUrl(
+    pickString(
+      source?.download_url,
+      source?.book?.download_url,
+      source?.data?.download_url,
+      `/api/books/${encodeURIComponent(bookId)}/download-file`,
+    ),
+  );
+  const streamUrl = asAbsoluteApiUrl(pickString(source?.stream_url, source?.book?.stream_url, source?.data?.stream_url));
+  const syncStatus = pickDownloadStatus(source);
+  const sizeBytes = localRecord?.sizeBytes || pickDownloadSizeBytes(source);
+  const fileName = pickString(pickDownloadFileName(source), localRecord?.fileName);
+  const createdAt = Number(new Date(pickString(source?.created_at, source?.data?.created_at, localRecord?.createdAt || '')).getTime());
+  const updatedAt = Number(new Date(pickString(source?.updated_at, source?.data?.updated_at, localRecord?.updatedAt || '')).getTime());
+
+  return {
+    bookId,
+    book: {...book, id: bookId},
+    localIdentifier,
+    blob: localRecord?.blob || null,
+    mimeType: localRecord?.mimeType || pickString(source?.mime_type, source?.data?.mime_type),
+    sizeBytes: sizeBytes || localRecord?.sizeBytes || 0,
+    createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : localRecord?.createdAt || Date.now(),
+    updatedAt: Number.isFinite(updatedAt) && updatedAt > 0 ? updatedAt : localRecord?.updatedAt || Date.now(),
+    fileName: fileName || localRecord?.fileName,
+    syncStatus: syncStatus || undefined,
+    readUrl,
+    streamUrl: streamUrl || undefined,
+    downloadUrl,
+    isDownloaded: Boolean(localRecord?.blob),
+  };
+}
+
+function collectDownloadedBooks(remote: ApiDownloadRecord[], localItems: StoredDownload[]): DownloadedBook[] {
+  const localByBookId = new Map<string, StoredDownload>();
+  const localByIdentifier = new Map<string, StoredDownload>();
+
+  for (const item of localItems) {
+    const bookId = normalizeBackendBookId(item.bookId);
+    if (bookId && !localByBookId.has(bookId)) localByBookId.set(bookId, item);
+    const localIdentifier = String(item.localIdentifier || '').trim();
+    if (localIdentifier && !localByIdentifier.has(localIdentifier)) localByIdentifier.set(localIdentifier, item);
+  }
+
+  const merged: DownloadedBook[] = [];
+  const seen = new Set<string>();
+
+  for (const record of remote) {
+    const recordBookId = normalizeBackendBookId(record?.book_id ?? record?.book?.id);
+    const localIdentifier = pickDownloadLocalIdentifier(record);
+    const localRecord =
+      (localIdentifier && localByIdentifier.get(localIdentifier)) ||
+      (recordBookId && localByBookId.get(recordBookId)) ||
+      null;
+    const normalized = normalizeDownloadedBook(record, localRecord);
+    if (!normalized) continue;
+    const signature = normalized.localIdentifier || normalized.bookId;
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    merged.push(normalized);
+  }
+
+  for (const localRecord of localItems) {
+    const signature = String(localRecord.localIdentifier || localRecord.bookId || '').trim();
+    if (signature && seen.has(signature)) continue;
+    const normalized = normalizeDownloadedBook(
+      {
+        book_id: localRecord.bookId,
+        local_identifier: localRecord.localIdentifier,
+        status: 'local',
+        book: localRecord.book,
+        created_at: new Date(localRecord.createdAt).toISOString(),
+        updated_at: new Date(localRecord.updatedAt).toISOString(),
+        file_name: localRecord.fileName,
+        mime_type: localRecord.mimeType,
+      },
+      localRecord,
+    );
+    if (!normalized) continue;
+    const nextSignature = normalized.localIdentifier || normalized.bookId;
+    if (seen.has(nextSignature)) continue;
+    seen.add(nextSignature);
+    merged.push(normalized);
+  }
+
+  return merged.sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
+}
+
 function parseContentDispositionFilename(contentDisposition: string | null): string {
   const raw = String(contentDisposition || '');
   if (!raw) return '';
@@ -157,23 +331,6 @@ function guessMimeType(fileName: string): string {
   if (name.endsWith('.txt')) return 'text/plain';
   if (name.endsWith('.html') || name.endsWith('.htm')) return 'text/html';
   return '';
-}
-
-function ensureAbsoluteUrl(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return '';
-  if (/^(https?:|data:|blob:)/i.test(trimmed)) return trimmed;
-
-  const origin = currentWindowOrigin();
-  if (trimmed.startsWith('/') && origin) return `${origin}${trimmed}`;
-
-  const base = String(API_BASE_URL || '').trim() || origin;
-  try {
-    if (!base) return trimmed;
-    return new URL(trimmed, base).toString();
-  } catch {
-    return trimmed;
-  }
 }
 
 function sameOrigin(a: string, b: string): boolean {
@@ -210,55 +367,12 @@ function shouldAttachDownloadAuthHeader(url: string): boolean {
   }
 }
 
-async function resolveDownloadUrl(bookId: string): Promise<string> {
+function resolveDownloadFileUrl(bookId: string): string {
   const normalizedBookId = normalizeBackendBookId(bookId);
-  const payload = (await bookService.download(normalizedBookId)) as any;
-
-  const candidates = [
-    payload?.download_url,
-    payload?.stream_url,
-    payload?.url,
-    payload?.read_url,
-    payload?.data?.download_url,
-    payload?.data?.stream_url,
-    payload?.data?.url,
-    payload?.data?.read_url,
-  ]
-    .map((value) => String(value || '').trim())
-    .filter(Boolean);
-
-  const unique: string[] = [];
-  for (const item of candidates) {
-    if (!unique.includes(item)) unique.push(item);
+  if (!normalizedBookId) {
+    throw new Error('Cannot download: missing book id.');
   }
-
-  const scoreUrl = (value: string): number => {
-    const raw = String(value || '').toLowerCase();
-    if (!raw) return 0;
-    // Prefer PDF for in-browser offline preview.
-    if (raw.includes('.pdf')) return 100;
-    if (raw.includes('format=pdf') || raw.includes('type=pdf')) return 80;
-    if (raw.includes('.epub')) return 20;
-    return 1;
-  };
-
-  let best = '';
-  let bestScore = -1;
-  for (const candidate of unique) {
-    const score = scoreUrl(candidate);
-    if (score > bestScore) {
-      bestScore = score;
-      best = candidate;
-    }
-  }
-
-  const url = pickString(best);
-
-  if (!url) {
-    throw new Error('Backend did not return a download URL. Expected `download_url`, `stream_url`, `url`, or `read_url`.');
-  }
-
-  return ensureAbsoluteUrl(url);
+  return bookService.downloadFileUrl(normalizedBookId);
 }
 
 async function syncDownloadRecordToBackend(
@@ -271,7 +385,6 @@ async function syncDownloadRecordToBackend(
     await bookService.createDownloadRecord(normalizedBookId, payload);
   } catch (error: any) {
     const status = Number(error?.status);
-    // The backend may already log via POST /api/books/{id}/download.
     // Keep the local download successful even if the optional sync endpoint rejects or duplicates.
     if ([400, 401, 403, 404, 405, 409, 422, 500].includes(status)) return;
     throw error;
@@ -418,13 +531,31 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
   const controllersRef = useRef(new Map<string, AbortController>());
   const [activeByBookId, setActiveByBookId] = useState<Record<string, ActiveDownload>>({});
   const [completed, setCompleted] = useState<StoredDownload[]>([]);
+  const [downloadedBooks, setDownloadedBooks] = useState<DownloadedBook[]>([]);
   const [storageUsed, setStorageUsed] = useState(0);
   const toast = useToast();
 
   const refresh = useCallback(async () => {
-    const [items, used] = await Promise.all([listDownloads(), storageUsedBytes()]);
-    const sorted = [...items].sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
-    setCompleted(sorted);
+    const localDownloadsPromise = listDownloads();
+    const storagePromise = storageUsedBytes();
+    const remotePromise = bookService
+      .listDownloads()
+      .then((payload) => {
+        const raw = (payload as any)?.data ?? payload;
+        const list =
+          (Array.isArray(raw) && raw) ||
+          (Array.isArray((raw as any)?.data) && (raw as any).data) ||
+          (Array.isArray((raw as any)?.downloads) && (raw as any).downloads) ||
+          (Array.isArray((raw as any)?.results) && (raw as any).results) ||
+          [];
+        return list as ApiDownloadRecord[];
+      })
+      .catch(() => [] as ApiDownloadRecord[]);
+
+    const [localItems, used, remoteItems] = await Promise.all([localDownloadsPromise, storagePromise, remotePromise]);
+    const sortedLocal = [...localItems].sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
+    setCompleted(sortedLocal);
+    setDownloadedBooks(collectDownloadedBooks(remoteItems, sortedLocal));
     setStorageUsed(used);
   }, []);
 
@@ -494,7 +625,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
       }));
 
       try {
-        const downloadUrl = await resolveDownloadUrl(bookId);
+        const downloadUrl = resolveDownloadFileUrl(bookId);
         setActiveByBookId((prev) => {
           const current = prev[bookId];
           if (!current) return prev;
@@ -507,7 +638,6 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
             },
           };
         });
-        void syncDownloadRecordToBackend(bookId, {status: 'started'});
         const {blob, mimeType, fileName} = await fetchBlobWithProgress(downloadUrl, controller, (snapshot) => {
           setActiveByBookId((prev) => {
             const current = prev[bookId];
@@ -530,6 +660,8 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
           });
         });
 
+        const localIdentifier = generateLocalIdentifier(bookId);
+
         const record: StoredDownload = {
           bookId,
           book,
@@ -539,6 +671,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
           createdAt: now,
           updatedAt: Date.now(),
           fileName: fileName || undefined,
+          localIdentifier,
         };
 
         await putDownload(record);
@@ -547,6 +680,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
           size_bytes: blob.size,
           file_name: fileName || undefined,
           mime_type: mimeType,
+          local_identifier: localIdentifier,
         });
         await refresh();
 
@@ -680,7 +814,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
     [refresh],
   );
 
-  const openOffline = useCallback(async (bookId: string) => {
+  const openOffline = useCallback(async (bookId: string, localIdentifier?: string) => {
     const tab = window.open('', '_blank');
     if (!tab) {
       throw new Error('Popup blocked. Please allow popups to open the reader.');
@@ -688,7 +822,11 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
 
     const normalized = normalizeBackendBookId(bookId);
     const legacy = legacyBackendBookId(bookId);
-    const record = (await getDownload(normalized)) || (legacy ? await getDownload(legacy) : null);
+    const normalizedLocalIdentifier = String(localIdentifier || '').trim();
+    const record =
+      (normalizedLocalIdentifier ? await getDownloadByLocalIdentifier(normalizedLocalIdentifier) : null) ||
+      (await getDownload(normalized)) ||
+      (legacy ? await getDownload(legacy) : null);
     if (!record) {
       try {
         tab.close();
@@ -731,6 +869,7 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
     () => ({
       active: Object.values(activeByBookId).sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt)),
       completed,
+      downloadedBooks,
       storageUsed,
       startDownload,
       pause,
@@ -742,7 +881,21 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
       activeById,
       refresh,
     }),
-    [activeByBookId, completed, storageUsed, startDownload, pause, resume, cancel, remove, openOffline, isDownloaded, activeById, refresh],
+    [
+      activeByBookId,
+      completed,
+      downloadedBooks,
+      storageUsed,
+      startDownload,
+      pause,
+      resume,
+      cancel,
+      remove,
+      openOffline,
+      isDownloaded,
+      activeById,
+      refresh,
+    ],
   );
 
   return <DownloadContext.Provider value={value}>{children}</DownloadContext.Provider>;
