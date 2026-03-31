@@ -135,12 +135,21 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
   const safeTrackingId = escapeHtml(trackingId);
   const normalizedMime = String(mimeType || '').trim().toLowerCase();
   const normalizedFileName = String(fileName || '').trim();
+  const normalizedUrl = String(url || '').trim();
+  const normalizedFileNameLower = normalizedFileName.toLowerCase();
   const safeFileName = escapeHtml(normalizedFileName);
 
-  const isPdf = normalizedMime.includes('pdf') || /\.pdf(\?|#|$)/i.test(url);
-  const isEpub = normalizedMime.includes('epub') || /\.epub(\?|#|$)/i.test(url);
+  const isBlobOrDataUrl = /^(blob:|data:)/i.test(normalizedUrl);
+  const isPdf =
+    normalizedMime.includes('pdf') ||
+    normalizedFileNameLower.endsWith('.pdf') ||
+    /\.pdf(\?|#|$)/i.test(normalizedUrl);
+  const isEpub =
+    normalizedMime.includes('epub') ||
+    normalizedFileNameLower.endsWith('.epub') ||
+    /\.epub(\?|#|$)/i.test(normalizedUrl);
   const canPreview = isPdf || (!isEpub && (normalizedMime.startsWith('text/') || normalizedMime.includes('html')));
-  const showPreviewUnavailable = !canPreview && (isEpub || Boolean(normalizedMime));
+  const showPreviewUnavailable = !canPreview && (isEpub || isBlobOrDataUrl || Boolean(normalizedMime) || Boolean(normalizedFileName));
 
   const tab = providedTab && !providedTab.closed ? providedTab : window.open('', '_blank');
   if (!tab) {
