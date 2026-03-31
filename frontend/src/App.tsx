@@ -28,6 +28,7 @@ import notificationService from './service/notificationService';
 import authService from './service/authService';
 import {
   AUTH_REQUIRED_EVENT,
+  GUEST_FREE_READ_LIMIT,
   getMembershipTier,
   MEMBERSHIP_TIER_EVENT,
   MembershipTier,
@@ -1111,7 +1112,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
             </h3>
             <p className="mt-2 text-sm text-text-muted leading-relaxed">
               {accessPromptReason === 'read-limit'
-                ? 'Guests can open 2 books for free. To continue reading more books, sign in or register as a Reader.'
+                ? `Guests can open ${GUEST_FREE_READ_LIMIT} books for free. To continue reading more books, sign in or register as a Reader.`
                 : 'You can keep browsing as a normal guest user, or sign in/register as a Reader to unlock this feature.'}
             </p>
             <div className="mt-6 flex flex-col sm:flex-row gap-3">

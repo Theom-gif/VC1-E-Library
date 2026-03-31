@@ -1265,7 +1265,21 @@ export function createMockBackendServer({logger = console} = {}) {
     const bookReviewsMatch = pathname.match(/^\/api\/books\/([^/]+)\/reviews$/);
     if (method === 'GET' && bookReviewsMatch) {
       const bookId = decodeURIComponent(bookReviewsMatch[1]);
-      const items = reviews.filter((r) => String(r.book_id) === String(bookId));
+      const rootItems = reviews.filter((r) => String(r.book_id) === String(bookId) && !pickString(r.parent_id));
+      const items = rootItems.map((review) => {
+        const replyItems = reviews
+          .filter((r) => pickString(r.parent_id) && pickString(r.parent_id) === pickString(review.id))
+          .map((reply) => ({
+            ...reply,
+            user: buildProfile(reply.user_id),
+          }));
+        return {
+          ...review,
+          user: buildProfile(review.user_id),
+          replies: replyItems,
+          replies_count: replyItems.length,
+        };
+      });
       sendJson(res, 200, {success: true, data: items});
       return;
     }
@@ -1284,11 +1298,48 @@ export function createMockBackendServer({logger = console} = {}) {
         text,
         rating,
         created_at: new Date().toISOString(),
+        parent_id: '',
       };
       reviews.push(review);
       const result = checkAndUnlockAchievements(authUser.id);
       const created = createAchievementUnlockNotifications(authUser.id, result.newlyUnlocked);
-      sendJson(res, 201, {success: true, data: review, newly_unlocked: result.newlyUnlocked, notifications: created});
+      sendJson(res, 201, {
+        success: true,
+        data: {
+          ...review,
+          user: buildProfile(review.user_id),
+          replies: [],
+          replies_count: 0,
+        },
+        newly_unlocked: result.newlyUnlocked,
+        notifications: created,
+      });
+      return;
+    }
+
+    const reviewRepliesMatch = pathname.match(/^\/api\/(reviews|comments)\/([^/]+)\/replies$/);
+    if (method === 'POST' && reviewRepliesMatch) {
+      const authUser = requireAuth(req, res);
+      if (!authUser) return;
+      const parentId = decodeURIComponent(reviewRepliesMatch[2]);
+      const parent = reviews.find((r) => pickString(r.id) === pickString(parentId) && !pickString(r.parent_id));
+      if (!parent) {
+        sendJson(res, 404, {message: 'Review not found'});
+        return;
+      }
+      const body = (await readJsonBody(req)) || {};
+      const text = pickString(body.text, body.content);
+      const reply = {
+        id: `r_${nextReviewId++}`,
+        book_id: pickString(parent.book_id),
+        user_id: String(authUser.id),
+        text,
+        rating: 0,
+        created_at: new Date().toISOString(),
+        parent_id: pickString(parent.id),
+      };
+      reviews.push(reply);
+      sendJson(res, 201, {success: true, data: {...reply, user: buildProfile(reply.user_id)}});
       return;
     }
 

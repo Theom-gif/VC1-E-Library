@@ -318,7 +318,7 @@ export default function Home({
             {authMode === 'login' ? (
               <form onSubmit={handleLoginSubmit} className="mt-6 grid gap-4">
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Library Email</label>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Email / Gmail</label>
                   <input
                     type="email"
                     value={loginForm.email}
@@ -399,7 +399,7 @@ export default function Home({
                   </div>
                 </div>
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Library Email</label>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Email / Gmail</label>
                   <input
                     type="email"
                     value={registerForm.email}

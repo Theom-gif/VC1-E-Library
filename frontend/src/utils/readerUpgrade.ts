@@ -1,5 +1,7 @@
 export type MembershipTier = 'normal' | 'reader';
 
+export const GUEST_FREE_READ_LIMIT = 3;
+
 const READ_BOOKS_KEY = 'elibrary_read_books';
 const TIER_KEY = 'elibrary_membership_tier';
 const SESSION_KEY = 'elibrary_session';
@@ -87,7 +89,7 @@ export function getReadCount(): number {
   return readBookIds().length;
 }
 
-export function hasReachedReadLimit(limit = 2): boolean {
+export function hasReachedReadLimit(limit = GUEST_FREE_READ_LIMIT): boolean {
   return getReadCount() >= limit;
 }
 
@@ -110,7 +112,7 @@ export function shouldRequireAuthForRead(): boolean {
   const role = getSessionRole();
   if (role && role !== 'user') return false;
   if (!isGuestSession()) return false;
-  return hasReachedReadLimit(2);
+  return hasReachedReadLimit();
 }
 
 export function requestAuth(
