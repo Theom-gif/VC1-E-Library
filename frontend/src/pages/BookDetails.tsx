@@ -10,7 +10,7 @@ import reviewService from '../service/reviewService';
 import authorService from '../service/authorService';
 import CoverImage from '../components/CoverImage';
 import AvatarImage from '../components/AvatarImage';
-import PdfReader from '../components/PdfReader';
+import PdfReader, {prefetchPdfReaderResources} from '../components/PdfReader';
 import {openReaderTab, shouldOpenReaderDirectly} from '../utils/openReaderTab';
 import {sweetAlert, sweetConfirm} from '../utils/sweetAlert';
 import {isFollowingAuthor, setFollowingAuthor} from '../utils/followingAuthors';
@@ -569,6 +569,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     if (!shouldOpenReaderDirectly()) return;
     let alive = true;
 
+    prefetchPdfReaderResources();
     const promise = bookService.readBlobUrl(normalizedBookId);
     readerAssetPromiseRef.current = promise;
 

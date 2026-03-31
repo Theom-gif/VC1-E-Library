@@ -1,8 +1,7 @@
 import React from 'react';
-import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+type PdfJsLibrary = typeof import('pdfjs-dist/build/pdf.mjs');
+type PdfWorkerModule = {default: string};
 
 type PdfReaderProps = {
   src: string;
@@ -10,13 +9,32 @@ type PdfReaderProps = {
   onClose: () => void;
 };
 
-type PdfDocument = Awaited<ReturnType<typeof pdfjsLib.getDocument>['promise']>;
+type PdfDocument = Awaited<ReturnType<PdfJsLibrary['getDocument']>['promise']>;
 
 let activeRenderTask: {cancel: () => void} | null = null;
+let pdfJsLoadPromise: Promise<PdfJsLibrary> | null = null;
+
+async function loadPdfJs(): Promise<PdfJsLibrary> {
+  if (!pdfJsLoadPromise) {
+    pdfJsLoadPromise = Promise.all([
+      import('pdfjs-dist/build/pdf.mjs'),
+      import('pdfjs-dist/build/pdf.worker.mjs?url'),
+    ]).then(([pdfjsLib, workerModule]) => {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = (workerModule as PdfWorkerModule).default;
+      return pdfjsLib;
+    });
+  }
+  return pdfJsLoadPromise;
+}
+
+export function prefetchPdfReaderResources() {
+  void loadPdfJs();
+}
 
 export default function PdfReader({src, title, onClose}: PdfReaderProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const docRef = React.useRef<PdfDocument | null>(null);
+  const loadingTaskRef = React.useRef<ReturnType<PdfJsLibrary['getDocument']> | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [rendering, setRendering] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -48,18 +66,42 @@ export default function PdfReader({src, title, onClose}: PdfReaderProps) {
       }
       activeRenderTask = null;
     }
+    if (loadingTaskRef.current) {
+      try {
+        loadingTaskRef.current.destroy();
+      } catch {
+        // ignore
+      }
+      loadingTaskRef.current = null;
+    }
 
-    const loadingTask = pdfjsLib.getDocument({url: src, withCredentials: true});
-
-    void loadingTask.promise
-      .then((doc) => {
-        if (!alive) {
-          void doc.destroy();
-          return;
-        }
-        docRef.current = doc;
-        setPageCount(doc.numPages);
-        setLoading(false);
+    void loadPdfJs()
+      .then((pdfjsLib) => {
+        if (!alive) return null;
+        const loadingTask = pdfjsLib.getDocument({
+          url: src,
+          withCredentials: true,
+        });
+        loadingTaskRef.current = loadingTask;
+        return loadingTask;
+      })
+      .then((loadingTask) => {
+        if (!alive || !loadingTask) return;
+        void loadingTask.promise
+          .then((doc) => {
+            if (!alive) {
+              void doc.destroy();
+              return;
+            }
+            docRef.current = doc;
+            setPageCount(doc.numPages);
+            setLoading(false);
+          })
+          .catch((err: any) => {
+            if (!alive) return;
+            setError(err?.message || 'Unable to open this book.');
+            setLoading(false);
+          });
       })
       .catch((err: any) => {
         if (!alive) return;
@@ -82,7 +124,14 @@ export default function PdfReader({src, title, onClose}: PdfReaderProps) {
       if (doc) {
         void doc.destroy();
       }
-      loadingTask.destroy();
+      if (loadingTaskRef.current) {
+        try {
+          loadingTaskRef.current.destroy();
+        } catch {
+          // ignore
+        }
+        loadingTaskRef.current = null;
+      }
     };
   }, [src]);
 
@@ -94,8 +143,9 @@ export default function PdfReader({src, title, onClose}: PdfReaderProps) {
     const page = await doc.getPage(pageNumber);
     const baseViewport = page.getViewport({scale: 1});
     const maxWidth = Math.max(320, viewportWidth - 24);
-    const scale = Math.max(0.5, Math.min(3, maxWidth / baseViewport.width));
-    const dpr = typeof window !== 'undefined' ? Math.max(1, window.devicePixelRatio || 1) : 1;
+    const scale = Math.max(0.5, Math.min(2.5, maxWidth / baseViewport.width));
+    const isSmallScreen = viewportWidth < 768;
+    const dpr = typeof window !== 'undefined' ? Math.max(1, Math.min(window.devicePixelRatio || 1, isSmallScreen ? 1.5 : 2)) : 1;
     const viewport = page.getViewport({scale: scale * dpr});
     const context = canvas.getContext('2d', {alpha: false});
     if (!context) {
@@ -170,7 +220,7 @@ export default function PdfReader({src, title, onClose}: PdfReaderProps) {
           <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-4">
             {loading ? (
               <div className="flex w-full items-center justify-center rounded-3xl border border-white/10 bg-white/5 p-10 text-sm text-white/70">
-                Loading reader...
+                Preparing reader...
               </div>
             ) : null}
             <canvas ref={canvasRef} className={`max-w-full rounded-2xl bg-white shadow-2xl ${loading ? 'hidden' : 'block'}`} />
