@@ -168,18 +168,26 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
     <link rel="shortcut icon" href="${safeFaviconSrc}" />
     <style>
       html, body { height: 100%; margin: 0; }
-      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: #0b1220; color: #e5e7eb; }
-      .bar { padding: 10px 14px; background: #111827; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-      .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: #0b1220; color: #e5e7eb; display: flex; flex-direction: column; overflow: hidden; }
+      .bar { padding: 10px 14px; background: #111827; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+      .brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 220px; }
       .brand img { width: 18px; height: 18px; flex: none; }
       .title { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .actions { display: flex; align-items: center; gap: 10px; }
+      .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: auto; }
       a { color: #22d3ee; text-decoration: none; font-weight: 600; font-size: 12px; }
       a:hover { text-decoration: underline; }
       button { appearance: none; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); color: #e5e7eb; border-radius: 10px; padding: 7px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
       button:hover { background: rgba(255,255,255,0.10); border-color: rgba(34,211,238,0.35); }
-      .frame { width: 100%; height: calc(100% - 44px); border: 0; background: #0b1220; }
-      .fallback { padding: 16px; font-size: 13px; color: #cbd5e1; }
+      .actions a, .actions button { white-space: nowrap; }
+      .frame { width: 100%; flex: 1 1 auto; min-height: 0; border: 0; background: #0b1220; }
+      .fallback { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px; font-size: 13px; color: #cbd5e1; }
+      @media (max-width: 640px) {
+        .bar { padding: 10px 12px; align-items: flex-start; }
+        .brand { flex-basis: 100%; }
+        .title { white-space: normal; line-height: 1.3; }
+        .actions { width: 100%; justify-content: flex-start; margin-left: 0; }
+        .actions a, .actions button { flex: 1 1 140px; text-align: center; }
+      }
     </style>
   </head>
   <body>

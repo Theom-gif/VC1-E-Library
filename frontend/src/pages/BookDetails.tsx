@@ -1209,7 +1209,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-12">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-20 py-8 sm:py-10 space-y-10 sm:space-y-12">
       {/* Breadcrumbs */}
       <nav className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted">
         <button type="button" onClick={() => onNavigate('home')} className="hover:text-primary transition-colors">Home</button>
@@ -1220,20 +1220,20 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       </nav>
 
       {/* Main Info */}
-      <section className="flex flex-col lg:flex-row gap-12">
+      <section className="flex flex-col lg:flex-row gap-8 lg:gap-12">
         <div className="w-full lg:w-80 shrink-0 space-y-6">
           <div className="relative aspect-[2/3] rounded-3xl overflow-hidden shadow-2xl border border-border">
             <CoverImage src={currentBook.cover} alt={currentBook.title} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <button type="button"
               onClick={() => {
                 void openOnline().catch((err: any) => {
                   void sweetAlert(err?.message || 'Unable to open this book.', {icon: 'error', title: 'Error'});
                 });
               }}
-              className="bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+              className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
               title="Read in browser"
             >
               <Icons.BookOpen className="size-4" />
@@ -1263,7 +1263,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                 void startDownload(currentBook);
                 onNavigate('downloads');
               }}
-              className="bg-surface text-text border border-border py-3 rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              className="w-full bg-surface text-text border border-border py-3 rounded-xl font-bold hover:bg-white/10 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
               disabled={Boolean(active && active.status === 'downloading')}
               title={downloaded ? 'Open offline' : 'Download for offline reading'}
             >
@@ -1302,7 +1302,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               </span>
             </div>
             <h1 className="text-4xl md:text-5xl font-bold leading-tight text-text">{currentBook.title}</h1>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
               <div 
                 className="flex items-center gap-3 cursor-pointer group/author"
                 onClick={() =>
@@ -1326,7 +1326,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                 type="button"
                 onClick={() => void toggleFollow()}
                 disabled={!authorInfo?.id || isTogglingFollow}
-                className={`px-4 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-widest transition-all ${
+                className={`w-fit px-4 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-widest transition-all ${
                   isFollowing
                     ? 'border-primary/30 bg-primary text-white hover:bg-primary/90'
                     : 'border-primary/30 text-primary hover:bg-primary hover:text-white'
@@ -1335,8 +1335,8 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               >
                 {isTogglingFollow ? 'Saving...' : isFollowing ? 'Following' : 'Follow'}
               </button>
-              <div className="h-8 w-px bg-border" />
-              <div className="flex items-center gap-2">
+              <div className="hidden sm:block h-8 w-px bg-border" />
+              <div className="flex flex-wrap items-center gap-2">
                 <div className="flex">
                   {[1, 2, 3, 4, 5].map((s) => (
                     <button
@@ -1363,7 +1363,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-6 border-y border-border">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 py-6 border-y border-border">
             <BookStat label="Pages" value={currentBook.pages?.toString() || '342'} />
             <BookStat label="Language" value="English" />
             <BookStat label="Format" value="EPUB, PDF" />
@@ -1380,7 +1380,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
 
           <div className="space-y-5 rounded-3xl border border-border bg-surface p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-xl font-bold text-text">Rate This Book</h3>
                 <p className="text-sm text-text-muted">
                   {isLoadingRatings
@@ -1388,7 +1388,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     : `${displayAverageRating ? displayAverageRating.toFixed(2) : '0.00'} average from ${displayTotalRatings.toLocaleString()} ratings`}
                 </p>
               </div>
-              <div className="rounded-2xl bg-bg px-4 py-3 text-right">
+              <div className="rounded-2xl bg-bg px-4 py-3 text-left sm:text-right">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Your Rating</p>
                 <p className="text-lg font-bold text-text">{activeUserRating ? `${activeUserRating}/5` : 'Not rated'}</p>
               </div>
@@ -1458,7 +1458,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
           </div>
 
           <div className="space-y-8">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-xl font-bold text-text">Community Discussion</h3>
               <span className="text-xs font-bold text-text-muted uppercase tracking-widest">
                 {isLoadingComments && comments.length === 0
@@ -1470,7 +1470,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
 
             {/* Comment Input */}
             <div className="space-y-4">
-                <div className="flex gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row">
                   <div className="size-10 rounded-full bg-primary/20 shrink-0 overflow-hidden border border-border">
                     <AvatarImage
                       src={asAbsoluteAssetUrl(currentProfile.photo) || fallbackProfilePhoto(currentProfile.name || 'user', 100)}
@@ -1478,7 +1478,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                       className="h-full w-full object-cover"
                     />
                   </div>
-                <div className="flex-1 space-y-3">
+              <div className="flex-1 space-y-3">
                   <textarea 
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
@@ -1489,7 +1489,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     <button type="button" 
                       onClick={() => void handlePostComment()}
                       disabled={!commentText.trim() || isSubmittingComment}
-                      className="bg-primary text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-primary/90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
+                      className="w-full sm:w-auto bg-primary text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-primary/90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-primary/20"
                     >
                       {isSubmittingComment ? 'Posting...' : 'Post Comment'}
                     </button>
@@ -1526,9 +1526,9 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     String(comment.user || '').trim().toLowerCase() === String(currentBook.author || '').trim().toLowerCase());
 
                 return (
-                <div key={comment.id} className="p-6 rounded-2xl bg-surface border border-border space-y-4 hover:border-primary/30 transition-all">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                <div key={comment.id} className="p-4 sm:p-6 rounded-2xl bg-surface border border-border space-y-4 hover:border-primary/30 transition-all">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="size-8 rounded-full bg-primary/20 overflow-hidden border border-border">
                         <AvatarImage
                           src={String(comment.avatar || '')}
@@ -1550,7 +1550,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       {(comment.canDelete ||
                         comment.user.trim().toLowerCase() === currentProfile.name.trim().toLowerCase()) &&
                         editingCommentId !== comment.id && (
@@ -1662,7 +1662,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                         <p className="text-xs text-text-muted">No replies yet. Be the first to reply.</p>
                       )}
 
-                      <div className="flex gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <input
                           type="text"
                           value={replyDraft}
@@ -1674,14 +1674,14 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                           type="button"
                           onClick={() => void handlePostReply(comment)}
                           disabled={!replyDraft.trim() || isReplySubmitting}
-                          className="rounded-lg bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-primary/90 disabled:opacity-50"
+                          className="w-full sm:w-auto rounded-lg bg-primary px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-primary/90 disabled:opacity-50"
                         >
                           {isReplySubmitting ? 'Sending...' : 'Reply'}
                         </button>
                       </div>
                     </div>
                   ) : null}
-                </div>
+              </div>
               )})}
             </div>
             
