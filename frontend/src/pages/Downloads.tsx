@@ -2,7 +2,7 @@ import React from 'react';
 import {Icons} from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import CoverImage from '../components/CoverImage';
-import {openReaderTab} from '../utils/openReaderTab';
+import {openReaderTab, shouldOpenReaderDirectly} from '../utils/openReaderTab';
 import {requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 
 interface DownloadsProps {
@@ -156,7 +156,7 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                     return;
                   }
                   if (item.localIdentifier || item.isDownloaded) {
-                    openOffline(item.bookId, item.localIdentifier)
+                    void openOffline(item.bookId, item.localIdentifier)
                       .then(() => {
                         trackRead(item.bookId);
                       })
@@ -164,6 +164,11 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                         const fallbackUrl = item.readUrl || item.streamUrl || item.downloadUrl;
                         if (!fallbackUrl) {
                           onNavigate('book-details', item.book);
+                          return;
+                        }
+                        if (shouldOpenReaderDirectly()) {
+                          trackRead(item.bookId);
+                          window.location.href = fallbackUrl;
                           return;
                         }
                         const tab = window.open('', '_blank');
@@ -185,6 +190,11 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                   const fallbackUrl = item.readUrl || item.streamUrl || item.downloadUrl;
                   if (!fallbackUrl) {
                     onNavigate('book-details', item.book);
+                    return;
+                  }
+                  if (shouldOpenReaderDirectly()) {
+                    trackRead(item.bookId);
+                    window.location.href = fallbackUrl;
                     return;
                   }
                   const tab = window.open('', '_blank');

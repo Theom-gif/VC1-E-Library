@@ -31,6 +31,16 @@ function readToken(): string | null {
   return readStoredAuthToken();
 }
 
+export function shouldOpenReaderDirectly(): boolean {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const userAgent = String(navigator.userAgent || '');
+  const isTouchDevice = Number(navigator.maxTouchPoints || 0) > 0;
+  const isPhoneLike =
+    /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(userAgent) ||
+    (isTouchDevice && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 900px)').matches);
+  return Boolean(isPhoneLike);
+}
+
 function wireReadingTracking(
   tab: Window,
   tracking: {bookId: string; source: ReadingSessionSource},
@@ -154,6 +164,16 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
   const tab = providedTab && !providedTab.closed ? providedTab : window.open('', '_blank');
   if (!tab) {
     throw new Error('Popup blocked. Please allow popups to open the reader.');
+  }
+
+  if (shouldOpenReaderDirectly()) {
+    try {
+      tab.close();
+    } catch {
+      // ignore popup close failures
+    }
+    window.location.href = url;
+    return;
   }
 
   try {

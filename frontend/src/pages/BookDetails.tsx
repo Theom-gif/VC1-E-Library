@@ -10,7 +10,7 @@ import reviewService from '../service/reviewService';
 import authorService from '../service/authorService';
 import CoverImage from '../components/CoverImage';
 import AvatarImage from '../components/AvatarImage';
-import {openReaderTab} from '../utils/openReaderTab';
+import {openReaderTab, shouldOpenReaderDirectly} from '../utils/openReaderTab';
 import {sweetAlert, sweetConfirm} from '../utils/sweetAlert';
 import {isFollowingAuthor, setFollowingAuthor} from '../utils/followingAuthors';
 import {
@@ -1185,6 +1185,12 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       return;
     }
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
+    if (shouldOpenReaderDirectly()) {
+      const url = await bookService.readUrl(normalizedBookId);
+      trackRead(normalizedBookId);
+      window.location.href = url;
+      return;
+    }
     const tab = window.open('', '_blank');
     if (!tab) throw new Error('Popup blocked. Please allow popups to open the reader.');
     try {

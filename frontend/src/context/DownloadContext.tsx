@@ -14,7 +14,8 @@ import {
   storageUsedBytes,
   type StoredDownload,
 } from '../offline/downloadsDb';
-import {openReaderTab} from '../utils/openReaderTab';
+import {openReaderTab, shouldOpenReaderDirectly} from '../utils/openReaderTab';
+import {trackRead} from '../utils/readerUpgrade';
 import readingSessionService from '../service/readingSessionService';
 import {toBookType} from '../service/bookMapper';
 
@@ -815,11 +816,6 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
   );
 
   const openOffline = useCallback(async (bookId: string, localIdentifier?: string) => {
-    const tab = window.open('', '_blank');
-    if (!tab) {
-      throw new Error('Popup blocked. Please allow popups to open the reader.');
-    }
-
     const normalized = normalizeBackendBookId(bookId);
     const legacy = legacyBackendBookId(bookId);
     const normalizedLocalIdentifier = String(localIdentifier || '').trim();
@@ -828,9 +824,6 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
       (await getDownload(normalized)) ||
       (legacy ? await getDownload(legacy) : null);
     if (!record) {
-      try {
-        tab.close();
-      } catch {}
       throw new Error('This book is not downloaded on this device.');
     }
     const effectiveMime =
@@ -842,6 +835,16 @@ export function DownloadProvider({children}: {children: React.ReactNode}) {
         : record.blob;
 
     const url = URL.createObjectURL(blobToOpen);
+    if (shouldOpenReaderDirectly()) {
+      trackRead(normalized);
+      window.location.href = url;
+      return;
+    }
+
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      throw new Error('Popup blocked. Please allow popups to open the reader.');
+    }
     try {
       openReaderTab({
         title: record.book?.title || 'Offline Read',

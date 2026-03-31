@@ -7,7 +7,7 @@ import {useFavorites} from '../context/FavoritesContext';
 import CoverImage from './CoverImage';
 import {sweetAlert} from '../utils/sweetAlert';
 import bookService from '../service/bookService';
-import {openReaderTab} from '../utils/openReaderTab';
+import {openReaderTab, shouldOpenReaderDirectly} from '../utils/openReaderTab';
 import {requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 
 interface BookCardProps {
@@ -60,6 +60,19 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
       if (!normalizedBookId) return;
       if (shouldRequireAuthForRead()) {
         requestAuth('read-limit');
+        return;
+      }
+
+      if (shouldOpenReaderDirectly()) {
+        void (async () => {
+          try {
+            const url = await bookService.readUrl(normalizedBookId);
+            trackRead(normalizedBookId);
+            window.location.href = url;
+          } catch (err: any) {
+            void sweetAlert(err?.message || 'Unable to open this book.', {icon: 'error', title: 'Error'});
+          }
+        })();
         return;
       }
 
