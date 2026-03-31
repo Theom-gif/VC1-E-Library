@@ -2,6 +2,7 @@ import apiClient, {API_BASE_URL} from './apiClient';
 import {withQuery} from './queryString';
 import type {BookType} from '../types';
 import {isApprovedBook, toBookType} from './bookMapper';
+import {readStoredAuthToken} from '../utils/authToken';
 
 export type ApiListMeta = {
   current_page: number;
@@ -46,6 +47,12 @@ export type CreateDownloadRecordPayload = {
   file_name?: string;
   mime_type?: string;
   local_identifier?: string;
+};
+
+export type ReadableBookAsset = {
+  url: string;
+  mimeType: string;
+  fileName?: string;
 };
 
 async function with404Fallback<T>(paths: string[], fn: (path: string) => Promise<T>): Promise<T> {
@@ -121,6 +128,75 @@ function asAbsoluteApiUrl(path: string): string {
 
   const normalized = raw.startsWith('/') ? raw : `/${raw.replace(/^\/+/, '')}`;
   return `${base}${normalized}`;
+}
+
+function guessFileNameFromDisposition(headerValue: string | null): string {
+  const raw = String(headerValue || '').trim();
+  if (!raw) return '';
+
+  const utf8Match = raw.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].replace(/^"|"$/g, ''));
+    } catch {
+      return utf8Match[1].replace(/^"|"$/g, '');
+    }
+  }
+
+  const plainMatch = raw.match(/filename\s*=\s*"?([^";]+)"?/i);
+  return plainMatch?.[1] ? plainMatch[1].trim() : '';
+}
+
+function guessFileNameFromUrl(url: string): string {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw, typeof window !== 'undefined' ? window.location.origin : undefined);
+    const lastSegment = parsed.pathname.split('/').filter(Boolean).pop() || '';
+    return lastSegment || '';
+  } catch {
+    const fallback = raw.split('/').filter(Boolean).pop() || '';
+    return fallback || '';
+  }
+}
+
+function guessMimeTypeFromName(fileName: string): string {
+  const lower = String(fileName || '').trim().toLowerCase();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.epub')) return 'application/epub+zip';
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html';
+  if (lower.endsWith('.txt')) return 'text/plain';
+  return 'application/octet-stream';
+}
+
+async function readBlobFromUrl(url: string): Promise<{blob: Blob; mimeType: string; fileName?: string}> {
+  const token = readStoredAuthToken();
+  const headers: Record<string, string> = {
+    Accept: 'application/pdf,application/epub+zip,text/html,text/plain,*/*;q=0.8',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, {
+    headers,
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Unable to open this book.');
+  }
+
+  const blob = await response.blob();
+  const fileName =
+    guessFileNameFromDisposition(response.headers.get('content-disposition')) ||
+    guessFileNameFromUrl(url);
+  const mimeType =
+    String(response.headers.get('content-type') || '').split(';')[0].trim() ||
+    blob.type ||
+    guessMimeTypeFromName(fileName);
+
+  return {blob, mimeType, fileName: fileName || undefined};
 }
 
 function clampPositiveInteger(value: unknown): number | undefined {
@@ -320,6 +396,18 @@ export const bookService = {
   readUrl: async (id: string) => {
     const encodedId = encodeURIComponent(normalizeBookId(id));
     return asAbsoluteApiUrl(`/api/books/${encodedId}/read`);
+  },
+
+  readBlobUrl: async (id: string): Promise<ReadableBookAsset> => {
+    const encodedId = encodeURIComponent(normalizeBookId(id));
+    const url = asAbsoluteApiUrl(`/api/books/${encodedId}/read`);
+    const {blob, mimeType, fileName} = await readBlobFromUrl(url);
+    const objectUrl = URL.createObjectURL(blob);
+    return {
+      url: objectUrl,
+      mimeType,
+      fileName,
+    };
   },
 };
 

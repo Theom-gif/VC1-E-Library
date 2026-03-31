@@ -66,11 +66,17 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
       if (shouldOpenReaderDirectly()) {
         void (async () => {
           try {
-            const url = await bookService.readUrl(normalizedBookId);
+            const asset = await bookService.readBlobUrl(normalizedBookId);
             trackRead(normalizedBookId);
-            window.location.href = url;
+            window.location.href = asset.url;
           } catch (err: any) {
-            void sweetAlert(err?.message || 'Unable to open this book.', {icon: 'error', title: 'Error'});
+            try {
+              const fallbackUrl = await bookService.readUrl(normalizedBookId);
+              trackRead(normalizedBookId);
+              window.location.href = fallbackUrl;
+            } catch (fallbackError: any) {
+              void sweetAlert(fallbackError?.message || err?.message || 'Unable to open this book.', {icon: 'error', title: 'Error'});
+            }
           }
         })();
         return;

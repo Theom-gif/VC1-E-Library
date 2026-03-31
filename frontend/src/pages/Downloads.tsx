@@ -2,6 +2,7 @@ import React from 'react';
 import {Icons} from '../types';
 import {useDownloads} from '../context/DownloadContext';
 import CoverImage from '../components/CoverImage';
+import bookService from '../service/bookService';
 import {openReaderTab, shouldOpenReaderDirectly} from '../utils/openReaderTab';
 import {requestAuth, shouldRequireAuthForRead, trackRead} from '../utils/readerUpgrade';
 
@@ -160,16 +161,23 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                       .then(() => {
                         trackRead(item.bookId);
                       })
-                      .catch(() => {
+                      .catch(async () => {
                         const fallbackUrl = item.readUrl || item.streamUrl || item.downloadUrl;
                         if (!fallbackUrl) {
                           onNavigate('book-details', item.book);
                           return;
                         }
                         if (shouldOpenReaderDirectly()) {
-                          trackRead(item.bookId);
-                          window.location.href = fallbackUrl;
-                          return;
+                          try {
+                            const asset = await bookService.readBlobUrl(item.bookId);
+                            trackRead(item.bookId);
+                            window.location.href = asset.url;
+                            return;
+                          } catch {
+                            trackRead(item.bookId);
+                            window.location.href = fallbackUrl;
+                            return;
+                          }
                         }
                         const tab = window.open('', '_blank');
                         if (!tab) {
@@ -193,8 +201,16 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                     return;
                   }
                   if (shouldOpenReaderDirectly()) {
-                    trackRead(item.bookId);
-                    window.location.href = fallbackUrl;
+                    void (async () => {
+                      try {
+                        const asset = await bookService.readBlobUrl(item.bookId);
+                        trackRead(item.bookId);
+                        window.location.href = asset.url;
+                      } catch {
+                        trackRead(item.bookId);
+                        window.location.href = fallbackUrl;
+                      }
+                    })();
                     return;
                   }
                   const tab = window.open('', '_blank');

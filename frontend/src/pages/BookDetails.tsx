@@ -1186,9 +1186,15 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     }
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
     if (shouldOpenReaderDirectly()) {
-      const url = await bookService.readUrl(normalizedBookId);
-      trackRead(normalizedBookId);
-      window.location.href = url;
+      try {
+        const asset = await bookService.readBlobUrl(normalizedBookId);
+        trackRead(normalizedBookId);
+        window.location.href = asset.url;
+      } catch {
+        const url = await bookService.readUrl(normalizedBookId);
+        trackRead(normalizedBookId);
+        window.location.href = url;
+      }
       return;
     }
     const tab = window.open('', '_blank');
