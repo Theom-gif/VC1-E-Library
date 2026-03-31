@@ -14,7 +14,7 @@ import {FOLLOWING_AUTHORS_EVENT, listFollowingAuthorsFromCache, type FollowingAu
 
 interface ProfileProps {
   user: {name: string; photo: string; membership: string; memberSince?: string};
-  onUpdateUser: (user: any) => void;
+  onUpdateUser: React.Dispatch<React.SetStateAction<any>>;
   onNavigate: (page: any, data?: any) => void;
 }
 
@@ -311,12 +311,7 @@ export default function Profile({user, onUpdateUser, onNavigate}: ProfileProps) 
                   initialName={user.name}
                   initialPhoto={user.photo}
                   onClose={() => setIsEditing(false)}
-                  onUpdatedUser={(partial) =>
-                    onUpdateUser({
-                      ...user,
-                      ...partial,
-                    })
-                  }
+                  onUpdatedUser={(partial) => onUpdateUser((prev: any) => ({...prev, ...partial}))}
                 />
               </div>
             ) : (

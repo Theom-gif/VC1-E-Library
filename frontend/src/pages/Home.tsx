@@ -163,13 +163,17 @@ export default function Home({
   const handleLoginSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!onLogin) return;
+    const email = loginForm.email.trim().toLowerCase();
+    if (!email) {
+      setAuthError('Email is required.');
+      return;
+    }
     setIsSubmitting(true);
     setAuthError('');
     try {
       await onLogin({
-        email: loginForm.email,
+        email,
         password: loginForm.password,
-        role: 'user',
         remember: true,
       });
       setLoginForm({ email: '', password: '' });
@@ -233,7 +237,7 @@ export default function Home({
             ) : showMock ? (
               <>
                 <span className="font-semibold text-text">Showing mock data.</span>{' '}
-                <span className="text-text-muted">Connect `VITE_API_URL` to load real books.</span>
+                <span className="text-text-muted">Connect your backend (`VITE_API_URL` or `VITE_BACKEND_PROXY_TARGET`) to load real books.</span>
               </>
             ) : showError ? (
               <>

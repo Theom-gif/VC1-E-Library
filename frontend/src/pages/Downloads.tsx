@@ -180,7 +180,7 @@ export default function Downloads({onNavigate}: DownloadsProps) {
                 </div>
 
                 <button
-                  className="p-2 rounded-lg bg-surface hover:bg-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                  className="p-2 rounded-lg bg-surface hover:bg-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-all"
                   onClick={(e) => {
                     e.stopPropagation();
                     void remove(item.bookId);

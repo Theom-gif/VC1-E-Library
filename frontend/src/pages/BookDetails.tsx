@@ -9,6 +9,7 @@ import ratingService, {type BookRatingsSummary} from '../service/ratingService';
 import reviewService from '../service/reviewService';
 import authorService from '../service/authorService';
 import CoverImage from '../components/CoverImage';
+import AvatarImage from '../components/AvatarImage';
 import {openReaderTab} from '../utils/openReaderTab';
 import {sweetAlert, sweetConfirm} from '../utils/sweetAlert';
 import {isFollowingAuthor, setFollowingAuthor} from '../utils/followingAuthors';
@@ -99,6 +100,15 @@ function pickString(...values: unknown[]): string {
   return '';
 }
 
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function pickNumber(...values: unknown[]): number {
   for (const value of values) {
     const n = Number(value);
@@ -164,8 +174,31 @@ function readSessionUserId(): string {
 function fallbackProfilePhoto(seed: string, size = 100): string {
   const raw = String(seed || '').trim() || 'user';
   const safeSize = Math.max(40, Math.min(256, Math.round(Number(size) || 100)));
-  // "Real" placeholder portraits (stable by seed).
-  return `https://i.pravatar.cc/${safeSize}?u=${encodeURIComponent(raw)}`;
+  // Local deterministic SVG avatar (works offline; stable by seed).
+  const normalizedSeed = raw.toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < normalizedSeed.length; i += 1) {
+    hash = (hash * 31 + normalizedSeed.charCodeAt(i)) % 360;
+  }
+  const hue = Math.max(0, Math.min(359, hash));
+  const bg = `hsl(${hue} 70% 18%)`;
+  const ring = `hsl(${hue} 85% 60%)`;
+  const initial = raw.trim().charAt(0) || 'U';
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${safeSize}" height="${safeSize}" viewBox="0 0 ${safeSize} ${safeSize}">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${bg}" />
+      <stop offset="1" stop-color="#0b1220" />
+    </linearGradient>
+  </defs>
+  <rect width="${safeSize}" height="${safeSize}" rx="${Math.round(safeSize * 0.22)}" fill="url(#g)"/>
+  <circle cx="${safeSize / 2}" cy="${safeSize / 2}" r="${Math.round(safeSize * 0.28)}" fill="none" stroke="${ring}" stroke-width="${Math.max(6, Math.round(safeSize * 0.06))}" opacity="0.7"/>
+  <text x="50%" y="52%" text-anchor="middle" dominant-baseline="middle"
+    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
+    font-size="${Math.round(safeSize * 0.38)}" font-weight="800" fill="rgba(229,231,235,0.92)">${escapeHtml(initial)}</text>
+</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 function stableHash(value: string): string {
@@ -295,6 +328,7 @@ function normalizeCommentReply(raw: any, fallbackIndex: number): CommentReply {
   const source = pickObject(raw);
   const user = pickObject(source?.user);
   const profile = readCurrentProfile();
+  const sessionUserId = readSessionUserId();
   const first = pickString(user?.firstname, source?.firstname, source?.first_name);
   const last = pickString(user?.lastname, source?.lastname, source?.last_name);
   const derivedName = pickString(`${first} ${last}`.trim());
@@ -316,11 +350,12 @@ function normalizeCommentReply(raw: any, fallbackIndex: number): CommentReply {
   const createdAtRaw = pickString(source?.created_at, source?.createdAt, source?.timestamp, source?.time);
   const derivedCreatedAt = parseRelativeAgoToIso(createdAtRaw);
   const createdAt = derivedCreatedAt || createdAtRaw;
-  const displayName = pickString(user?.name, derivedName, source?.user_name, source?.username, profile.name, 'Library User');
-  const avatarFallback = displayName.trim().toLowerCase() === profile.name.trim().toLowerCase() ? profile.photo : '';
+  const isMe = Boolean(sessionUserId && userId && String(sessionUserId) === String(userId));
+  const displayName = pickString(isMe ? profile.name : '', user?.name, derivedName, source?.user_name, source?.username, 'Library User');
+  const meAvatar = isMe ? asAbsoluteAssetUrl(profile.photo) : '';
   const avatar =
+    meAvatar ||
     asAbsoluteAssetUrl(avatarRaw) ||
-    asAbsoluteAssetUrl(avatarFallback) ||
     fallbackProfilePhoto(userId || displayName, 100);
 
   return {
@@ -340,6 +375,7 @@ function normalizeComment(raw: any, fallbackIndex: number): Comment {
   const source = pickObject(raw);
   const user = pickObject(source?.user);
   const profile = readCurrentProfile();
+  const sessionUserId = readSessionUserId();
   const first = pickString(user?.firstname, source?.firstname, source?.first_name);
   const last = pickString(user?.lastname, source?.lastname, source?.last_name);
   const derivedName = pickString(`${first} ${last}`.trim());
@@ -362,11 +398,12 @@ function normalizeComment(raw: any, fallbackIndex: number): Comment {
   const derivedCreatedAt = parseRelativeAgoToIso(createdAtRaw);
   const createdAt = derivedCreatedAt || createdAtRaw;
   const rating = pickNumber(source?.rating, source?.stars, source?.score);
-  const displayName = pickString(user?.name, derivedName, source?.user_name, source?.username, profile.name, 'Library User');
-  const avatarFallback = displayName.trim().toLowerCase() === profile.name.trim().toLowerCase() ? profile.photo : '';
+  const isMe = Boolean(sessionUserId && userId && String(sessionUserId) === String(userId));
+  const displayName = pickString(isMe ? profile.name : '', user?.name, derivedName, source?.user_name, source?.username, 'Library User');
+  const meAvatar = isMe ? asAbsoluteAssetUrl(profile.photo) : '';
   const avatar =
+    meAvatar ||
     asAbsoluteAssetUrl(avatarRaw) ||
-    asAbsoluteAssetUrl(avatarFallback) ||
     fallbackProfilePhoto(userId || displayName, 100);
   const nestedReplies = Array.isArray(source?.replies)
     ? source.replies
@@ -1435,9 +1472,10 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
             <div className="space-y-4">
                 <div className="flex gap-4">
                   <div className="size-10 rounded-full bg-primary/20 shrink-0 overflow-hidden border border-border">
-                    <img
+                    <AvatarImage
                       src={asAbsoluteAssetUrl(currentProfile.photo) || fallbackProfilePhoto(currentProfile.name || 'user', 100)}
                       alt={currentProfile.name || 'User'}
+                      className="h-full w-full object-cover"
                     />
                   </div>
                 <div className="flex-1 space-y-3">
@@ -1480,16 +1518,33 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                 const isRepliesOpen = Boolean(openRepliesByCommentId[comment.id]);
                 const replyDraft = String(replyDraftsByCommentId[comment.id] || '');
                 const isReplySubmitting = Boolean(replySubmittingByCommentId[comment.id]);
+                const isAuthorComment =
+                  (String(comment.userId || '').trim() &&
+                    String(currentBook.authorId || '').trim() &&
+                    normalizeBackendBookId(comment.userId) === normalizeBackendBookId(currentBook.authorId)) ||
+                  (String(currentBook.author || '').trim() &&
+                    String(comment.user || '').trim().toLowerCase() === String(currentBook.author || '').trim().toLowerCase());
 
                 return (
                 <div key={comment.id} className="p-6 rounded-2xl bg-surface border border-border space-y-4 hover:border-primary/30 transition-all">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="size-8 rounded-full bg-primary/20 overflow-hidden border border-border">
-                        <img src={comment.avatar} alt={comment.user} />
+                        <AvatarImage
+                          src={String(comment.avatar || '')}
+                          alt={comment.user}
+                          className="h-full w-full object-cover"
+                        />
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-text">{comment.user}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-text">{comment.user}</p>
+                          {isAuthorComment ? (
+                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-500">
+                              Author
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="text-[10px] text-text-muted">
                           {comment.createdAt ? formatRelativeTime(comment.createdAt, nowTick) : comment.time}
                         </p>
@@ -1570,20 +1625,38 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                     <div className="space-y-3 rounded-xl border border-border bg-bg/40 p-3">
                       {replyItems.length ? (
                         <div className="space-y-3">
-                          {replyItems.map((reply) => (
+                          {replyItems.map((reply) => {
+                            const isAuthorReply =
+                              (String(reply.userId || '').trim() &&
+                                String(currentBook.authorId || '').trim() &&
+                                normalizeBackendBookId(reply.userId) === normalizeBackendBookId(currentBook.authorId)) ||
+                              (String(currentBook.author || '').trim() &&
+                                String(reply.user || '').trim().toLowerCase() === String(currentBook.author || '').trim().toLowerCase());
+                            return (
                             <div key={reply.id} className="rounded-lg border border-border/70 bg-surface/70 p-3">
                               <div className="mb-2 flex items-center gap-2">
                                 <div className="size-6 rounded-full overflow-hidden border border-border bg-primary/20">
-                                  <img src={reply.avatar} alt={reply.user} />
+                                  <AvatarImage
+                                    src={String(reply.avatar || '')}
+                                    alt={reply.user}
+                                    className="h-full w-full object-cover"
+                                  />
                                 </div>
-                                <p className="text-xs font-bold text-text">{reply.user}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-xs font-bold text-text">{reply.user}</p>
+                                  {isAuthorReply ? (
+                                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-500">
+                                      Author
+                                    </span>
+                                  ) : null}
+                                </div>
                                 <p className="text-[10px] text-text-muted">
                                   {reply.createdAt ? formatRelativeTime(reply.createdAt, nowTick) : reply.time}
                                 </p>
                               </div>
                               <p className="text-xs text-text-muted leading-relaxed">{reply.text}</p>
                             </div>
-                          ))}
+                          )})}
                         </div>
                       ) : (
                         <p className="text-xs text-text-muted">No replies yet. Be the first to reply.</p>

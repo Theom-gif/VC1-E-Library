@@ -135,6 +135,7 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
   const [error, setError] = React.useState('');
   const [isMarkingAll, setIsMarkingAll] = React.useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState<number | null>(null);
+  const didAutoMarkRef = React.useRef(false);
 
   React.useEffect(() => {
     const onLocalNotification = (event: Event) => {
@@ -267,6 +268,15 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       setIsMarkingAll(false);
     }
   };
+
+  React.useEffect(() => {
+    if (didAutoMarkRef.current) return;
+    if (isLoading) return;
+    if (isMarkingAll) return;
+    if (!notifications.some((n) => n.unread)) return;
+    didAutoMarkRef.current = true;
+    void markAllRead();
+  }, [isLoading, isMarkingAll, notifications]);
 
   const markRead = async (id: string) => {
     if (id.startsWith('local-')) {

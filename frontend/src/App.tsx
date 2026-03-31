@@ -223,6 +223,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isLightMode, setIsLightMode] = useState(() => readThemeMode() === 'light');
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const markingAllNotificationsReadRef = useRef(false);
   const isGuestUser = authUser?.id === 'guest';
   const guestRestrictedPages: Page[] = ['favorites', 'downloads', 'settings', 'profile'];
   const cachedProfile = readProfileCache();
@@ -242,6 +243,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
   }, [confirmIfDirty, isDirty, setDirty]);
 
   const urlSyncRef = useRef({skipPush: false});
+  const navigateToRef = useRef<(page: Page, data?: any) => boolean>(() => true);
 
   const pageToPath = React.useCallback((page: Page) => {
     if (page === 'home') return '/';
@@ -282,6 +284,12 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     let alive = true;
 
     const loadUnreadCount = async () => {
+      // Avoid flicker: if we're clearing unread notifications, force badge to 0.
+      if (markingAllNotificationsReadRef.current) {
+        if (alive) setUnreadNotificationCount(0);
+        return;
+      }
+
       const localUnread = readLocalUnreadNotifications();
       const localUnreadSet = new Set(localUnread.map((item) => item.id));
       let nextCount = localUnreadSet.size;
@@ -490,13 +498,18 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       .me()
       .then((profile) => {
         if (!alive) return;
-        setUser((prev) => ({
-          ...prev,
-          name: profile.name || prev.name,
-          photo: profile.photo || prev.photo || DEFAULT_PROFILE_PHOTO,
-          memberSince: profile.memberSince || prev.memberSince,
-          membership: profile.membership || prev.membership,
-        }));
+        setUser((prev) => {
+          const prevPhoto = String(prev?.photo || '').trim();
+          const serverPhoto = String(profile?.photo || '').trim();
+          const keepPrevPhoto = /^data:|^blob:/i.test(prevPhoto);
+          return {
+            ...prev,
+            name: profile.name || prev.name,
+            photo: keepPrevPhoto ? prevPhoto : serverPhoto || prevPhoto || DEFAULT_PROFILE_PHOTO,
+            memberSince: profile.memberSince || prev.memberSince,
+            membership: profile.membership || prev.membership,
+          };
+        });
       })
       .catch(() => {
         // Keep cached/local profile when backend profile read is unavailable.
@@ -547,6 +560,37 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       return false;
     }
     if (page !== currentPage && !canNavigateAway()) return false;
+
+    if (page === 'notifications') {
+      // Opening notifications should clear the badge and mark current items as read.
+      setUnreadNotificationCount(0);
+      markingAllNotificationsReadRef.current = true;
+
+      try {
+        const raw = localStorage.getItem(LOCAL_NOTIFICATIONS_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (Array.isArray(parsed) && parsed.length) {
+          const updated = parsed.map((item: any) => ({...item, unread: false}));
+          localStorage.setItem(LOCAL_NOTIFICATIONS_KEY, JSON.stringify(updated.slice(0, 100)));
+        }
+      } catch {
+        // ignore storage issues
+      }
+
+      const token = authService.getToken();
+      if (token) {
+        void notificationService
+          .markAllRead()
+          .catch(() => {
+            // ignore; unread will show again if backend still reports it
+          })
+          .finally(() => {
+            markingAllNotificationsReadRef.current = false;
+          });
+      } else {
+        markingAllNotificationsReadRef.current = false;
+      }
+    }
     if (page === 'book-details' && data) setSelectedBook(data);
     if (page === 'author-details' && data) setSelectedAuthor(data);
     if (page === 'home') {
@@ -564,6 +608,25 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
     window.scrollTo(0, 0);
     return true;
   };
+
+  React.useEffect(() => {
+    navigateToRef.current = navigateTo;
+  }, [navigateTo]);
+
+  React.useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const payload: any = (event as any)?.data;
+      if (!payload || payload.source !== 'elibrary-reader') return;
+      if (payload.type === 'navigate-home') {
+        navigateToRef.current('home');
+      }
+    };
+
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+    };
+  }, []);
 
   const didInitUrlRef = useRef(false);
 

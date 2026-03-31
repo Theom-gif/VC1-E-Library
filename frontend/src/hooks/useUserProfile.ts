@@ -2,6 +2,7 @@ import React from 'react';
 import profileService, {type ProfileSummary} from '../service/profileService';
 import {requestAuth} from '../utils/readerUpgrade';
 import authService from '../service/authService';
+import {resizeImageFileToDataUrl} from '../utils/image';
 
 export type UpdateProfileInput = {
   firstname: string;
@@ -84,8 +85,18 @@ export function useUserProfile() {
           facebook_url: input.facebookUrl,
           name: optimisticName || undefined,
         } as any);
-        setProfile(saved);
-        return saved;
+        // Some backends omit `photo` in profile update responses. Preserve the existing photo to avoid
+        // "losing" the selected avatar after clicking Save Changes.
+        const merged = (previous || profileRef.current)
+          ? {
+              ...saved,
+              photo: saved.photo || (previous || profileRef.current)?.photo || '',
+              membership: saved.membership || (previous || profileRef.current)?.membership,
+              memberSince: saved.memberSince || (previous || profileRef.current)?.memberSince,
+            }
+          : saved;
+        setProfile(merged);
+        return merged;
       } catch (err) {
         const mapped = mapRequestError(err);
         setProfile(previous);
@@ -103,12 +114,43 @@ export function useUserProfile() {
     setError(null);
     try {
       const saved = await profileService.uploadAvatar(file);
-      setProfile((prev) => (prev ? {...prev, photo: saved.photo || prev.photo} : saved));
-      return saved.photo;
+      if (saved.photo) {
+        setProfile((prev) => (prev ? {...prev, photo: saved.photo || prev.photo} : saved));
+        return saved.photo;
+      }
+
+      // Backend didn't return a usable photo URL; store a resized data URL locally as a reliable fallback.
+      const localPhoto = await resizeImageFileToDataUrl(file, {
+        maxWidth: 512,
+        maxHeight: 512,
+        mimeType: 'image/jpeg',
+        quality: 0.86,
+      });
+      setProfile((prev) => (prev ? {...prev, photo: localPhoto} : {...saved, photo: localPhoto}));
+      return localPhoto;
     } catch (err) {
       const mapped = mapRequestError(err);
-      setError(mapped);
-      throw mapped;
+      const status = Number((mapped as any)?.status);
+      if (status === 401) {
+        setError(mapped);
+        throw mapped;
+      }
+
+      // If upload fails (missing endpoint / offline / dev backend), persist the selected image locally
+      // so the user still "stores" their chosen profile picture on this device.
+      try {
+        const localPhoto = await resizeImageFileToDataUrl(file, {
+          maxWidth: 512,
+          maxHeight: 512,
+          mimeType: 'image/jpeg',
+          quality: 0.86,
+        });
+        setProfile((prev) => (prev ? {...prev, photo: localPhoto} : prev));
+        return localPhoto;
+      } catch {
+        setError(mapped);
+        throw mapped;
+      }
     } finally {
       setUploadingAvatar(false);
     }

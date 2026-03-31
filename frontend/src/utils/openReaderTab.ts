@@ -16,6 +16,7 @@ type OpenReaderTabArgs = {
 // Use explicit Unicode escapes to avoid mojibake on systems that read files as non-UTF8.
 const APP_TAB_TITLE = '\u1782\u1798\u17d2\u1796\u17b8-ELibrary';
 const FAVICON_SRC = `${import.meta.env.BASE_URL}favicon.svg?v=1`;
+const APP_HOME_HREF = String(import.meta.env.BASE_URL || '/');
 
 function escapeHtml(value: string): string {
   return String(value)
@@ -128,6 +129,7 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
   const safeTitle = escapeHtml(title || 'Reader');
   const safeAppTitle = escapeHtml(APP_TAB_TITLE);
   const safeFaviconSrc = escapeHtml(FAVICON_SRC);
+  const safeHomeHref = escapeHtml(APP_HOME_HREF);
   const safeUrl = escapeHtml(url);
   const trackingId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const safeTrackingId = escapeHtml(trackingId);
@@ -162,8 +164,11 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
       .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
       .brand img { width: 18px; height: 18px; flex: none; }
       .title { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .actions { display: flex; align-items: center; gap: 10px; }
       a { color: #22d3ee; text-decoration: none; font-weight: 600; font-size: 12px; }
       a:hover { text-decoration: underline; }
+      button { appearance: none; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); color: #e5e7eb; border-radius: 10px; padding: 7px 10px; font-weight: 800; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+      button:hover { background: rgba(255,255,255,0.10); border-color: rgba(34,211,238,0.35); }
       .frame { width: 100%; height: calc(100% - 44px); border: 0; background: #0b1220; }
       .fallback { padding: 16px; font-size: 13px; color: #cbd5e1; }
     </style>
@@ -174,7 +179,10 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
         <img src="${safeFaviconSrc}" alt="" aria-hidden="true" />
         <div class="title" title="${safeTitle}">${safeTitle}</div>
       </div>
-      <a href="${safeUrl}" target="_blank" rel="noreferrer noopener">Open file</a>
+      <div class="actions">
+        <button id="elibrary-back" type="button" aria-label="Back to eLibrary">Back</button>
+        <a href="${safeUrl}" target="_blank" rel="noreferrer noopener">Open file</a>
+      </div>
     </div>
     ${
       showPreviewUnavailable
@@ -191,6 +199,26 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
     <script>
       (function () {
         var trackingId = "${safeTrackingId}";
+        var homeHref = "${safeHomeHref}";
+        var backBtn = document.getElementById("elibrary-back");
+        if (backBtn) {
+          backBtn.addEventListener("click", function () {
+            try {
+              if (window.opener && !window.opener.closed) {
+                try {
+                  window.opener.postMessage({ source: "elibrary-reader", type: "navigate-home" }, "*");
+                } catch (error) {}
+                try {
+                  window.opener.location.href = homeHref || "/";
+                } catch (error) {}
+                try { window.opener.focus(); } catch (error) {}
+                try { window.close(); } catch (error) {}
+                return;
+              }
+            } catch (error) {}
+            try { window.location.href = homeHref || "/"; } catch (error) {}
+          });
+        }
         var timer = null;
         function post(type) {
           try {

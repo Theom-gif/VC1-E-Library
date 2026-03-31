@@ -19,9 +19,10 @@ type Props = {
   value: string;
   disabled?: boolean;
   onUploaded: (file: File) => Promise<void>;
+  onPreview?: (dataUrl: string) => void;
 };
 
-export default function AvatarUploader({nameForAlt, value, disabled, onUploaded}: Props) {
+export default function AvatarUploader({nameForAlt, value, disabled, onUploaded, onPreview}: Props) {
   const {t} = useI18n();
   const toast = useToast();
   const [isDragging, setIsDragging] = React.useState(false);
@@ -72,6 +73,9 @@ export default function AvatarUploader({nameForAlt, value, disabled, onUploaded}
       try {
         const dataUrl = await resizeImageFileToDataUrl(file, {maxWidth: 512, maxHeight: 512, mimeType: 'image/jpeg', quality: 0.86});
         setPreview(dataUrl);
+        if (dataUrl && dataUrl.startsWith('data:')) {
+          onPreview?.(dataUrl);
+        }
       } catch {
         // Non-blocking: upload can still proceed even if local preview fails.
       }

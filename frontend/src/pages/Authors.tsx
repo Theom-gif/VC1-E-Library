@@ -320,11 +320,7 @@ export default function Authors({onNavigate}: AuthorsProps) {
       </section>
       ) : null}
 
-      {source === 'users-role-fallback' && !error ? (
-        <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-text-muted">
-          Loaded authors from user records with author role.
-        </div>
-      ) : null}
+      {/* Hide internal data-source notices in UI. */}
 
       {source === 'books-fallback' && !error ? (
         <div className="rounded-2xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-text-muted">

@@ -18,6 +18,8 @@ const pickString = (value) => {
   return normalized ? normalized : '';
 };
 
+const normalizeEmail = (value) => pickString(value).trim().toLowerCase();
+
 const findTokenDeep = (value, depth = 0) => {
   if (!value || depth > 6) return '';
   if (Array.isArray(value)) {
@@ -81,12 +83,16 @@ const clearToken = () => {
 
 export const authService = {
   login: async (credentials) => {
+    const normalizedCredentials =
+      credentials && typeof credentials === 'object'
+        ? {...credentials, email: normalizeEmail(credentials.email)}
+        : credentials;
     const loginPaths = ['/api/auth/login', '/api/login', '/login'];
     let lastError;
 
     for (const path of loginPaths) {
       try {
-        const data = await apiClient.post(path, credentials);
+        const data = await apiClient.post(path, normalizedCredentials);
         storeToken(extractToken(data));
         return data;
       } catch (error) {
@@ -99,6 +105,10 @@ export const authService = {
   },
 
   register: async (payload) => {
+    const normalizedPayload =
+      payload && typeof payload === 'object'
+        ? {...payload, email: normalizeEmail(payload.email)}
+        : payload;
     const registerPaths = [
       '/api/auth/register',
       '/api/auth/user_registration',
@@ -109,7 +119,7 @@ export const authService = {
 
     for (const path of registerPaths) {
       try {
-        const data = await apiClient.post(path, payload);
+        const data = await apiClient.post(path, normalizedPayload);
         storeToken(extractToken(data));
         return data;
       } catch (error) {

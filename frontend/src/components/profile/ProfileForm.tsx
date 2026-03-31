@@ -10,7 +10,7 @@ type Props = {
   initialName: string;
   initialPhoto: string;
   onClose: () => void;
-  onUpdatedUser: (next: {name: string; photo: string; memberSince?: string; membership?: string}) => void;
+  onUpdatedUser: (next: {name?: string; photo?: string; memberSince?: string; membership?: string}) => void;
 };
 
 function splitFullName(value: string): {firstname: string; lastname: string} {
@@ -57,6 +57,7 @@ export default function ProfileForm({initialName, initialPhoto, onClose, onUpdat
   const toast = useToast();
   const {setDirty} = useUnsavedChanges();
   const {profile, loading, saving, uploadingAvatar, load, update, uploadAvatar, setProfile} = useUserProfile();
+  const avatarPreviewRef = React.useRef<string>('');
 
   const [fullName, setFullName] = React.useState(initialName);
   const [bio, setBio] = React.useState('');
@@ -116,7 +117,6 @@ export default function ProfileForm({initialName, initialPhoto, onClose, onUpdat
       setDirty(false);
       onUpdatedUser({
         name: saved.name || fullName.trim(),
-        photo: saved.photo || profile?.photo || initialPhoto,
         membership: saved.membership,
         memberSince: saved.memberSince,
       });
@@ -133,15 +133,21 @@ export default function ProfileForm({initialName, initialPhoto, onClose, onUpdat
 
   const onAvatarUploaded = async (file: File) => {
     const nextPhoto = await uploadAvatar(file);
-    if (nextPhoto) {
-      setProfile((prev) => (prev ? {...prev, photo: nextPhoto} : prev));
-      onUpdatedUser({
-        name: profile?.name || fullName.trim() || initialName,
-        photo: nextPhoto,
-        membership: profile?.membership,
-        memberSince: profile?.memberSince,
-      });
-    }
+    if (!nextPhoto) return;
+    setProfile((prev) => (prev ? {...prev, photo: nextPhoto} : prev));
+
+    // Prefer the local preview (data URL) for immediate UI update and reliability.
+    // Some backends return a `photo` URL that may not be immediately reachable; the preview guarantees it displays.
+    const preview = avatarPreviewRef.current;
+    const shouldUseReturned = nextPhoto.startsWith('data:') || !preview;
+    onUpdatedUser({photo: shouldUseReturned ? nextPhoto : preview});
+  };
+
+  const onAvatarPreview = (dataUrl: string) => {
+    if (!dataUrl || !dataUrl.startsWith('data:')) return;
+    avatarPreviewRef.current = dataUrl;
+    setProfile((prev) => (prev ? {...prev, photo: dataUrl} : prev));
+    onUpdatedUser({photo: dataUrl});
   };
 
   return (
@@ -207,6 +213,7 @@ export default function ProfileForm({initialName, initialPhoto, onClose, onUpdat
           value={profile?.photo || initialPhoto}
           disabled={disabled}
           onUploaded={onAvatarUploaded}
+          onPreview={onAvatarPreview}
         />
       </div>
 
