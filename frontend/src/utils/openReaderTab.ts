@@ -160,6 +160,7 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
     /\.epub(\?|#|$)/i.test(normalizedUrl);
   const canPreview = isPdf || (!isEpub && (normalizedMime.startsWith('text/') || normalizedMime.includes('html')));
   const showPreviewUnavailable = !canPreview && (isEpub || isBlobOrDataUrl || Boolean(normalizedMime) || Boolean(normalizedFileName));
+  const readerFrameSrc = isPdf ? `${safeUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH` : safeUrl;
 
   const tab = providedTab && !providedTab.closed ? providedTab : window.open('', '_blank');
   if (!tab) {
@@ -231,7 +232,7 @@ export function openReaderTab({title, url, tracking, tab: providedTab, mimeType,
               Use <strong>Open file</strong> to download/open it with an external reader app.
             </div>
           </div>`
-        : `<iframe class="frame" src="${safeUrl}" title="${safeTitle}"></iframe>`
+        : `<iframe class="frame" src="${readerFrameSrc}" title="${safeTitle}"></iframe>`
     }
     <script>
       (function () {

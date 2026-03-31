@@ -24,7 +24,7 @@ function normalizeBackendBookId(value: unknown): string {
   return raw.startsWith('api-') ? raw.slice(4) : raw;
 }
 
-export default function BookCard({book, onClick, onNavigate, onAuthorClick}: BookCardProps) {
+function BookCard({book, onClick, onNavigate, onAuthorClick}: BookCardProps) {
   const {startDownload, resume, openOffline, isDownloaded, activeById} = useDownloads();
   const {isFavorite, toggle} = useFavorites();
   const downloaded = isDownloaded(String(book.id));
@@ -210,3 +210,5 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
     </motion.div>
   );
 }
+
+export default React.memo(BookCard);

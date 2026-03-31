@@ -10,6 +10,7 @@ import reviewService from '../service/reviewService';
 import authorService from '../service/authorService';
 import CoverImage from '../components/CoverImage';
 import AvatarImage from '../components/AvatarImage';
+import PdfReader from '../components/PdfReader';
 import {openReaderTab, shouldOpenReaderDirectly} from '../utils/openReaderTab';
 import {sweetAlert, sweetConfirm} from '../utils/sweetAlert';
 import {isFollowingAuthor, setFollowingAuthor} from '../utils/followingAuthors';
@@ -22,6 +23,7 @@ import {
 } from '../utils/readerUpgrade';
 import authService from '../service/authService';
 import {API_BASE_URL} from '../service/apiClient';
+import type {ReadableBookAsset} from '../service/bookService';
 
 interface BookDetailsProps {
   book?: BookType | null;
@@ -129,6 +131,38 @@ const authorPhotoCache = new Map<string, string>();
 
 type StoredRatingsByUser = Record<string, Record<string, number>>;
 
+type CachedProfileState = {
+  sessionRaw: string;
+  cacheRaw: string;
+  value: {name: string; photo: string};
+};
+
+type CachedSessionState = {
+  sessionRaw: string;
+  value: string;
+};
+
+type CachedRatingsState = {
+  raw: string;
+  value: StoredRatingsByUser;
+};
+
+const cachedProfileState: CachedProfileState = {
+  sessionRaw: '',
+  cacheRaw: '',
+  value: {name: 'Library User', photo: ''},
+};
+
+const cachedSessionState: CachedSessionState = {
+  sessionRaw: '',
+  value: '',
+};
+
+const cachedRatingsState: CachedRatingsState = {
+  raw: '',
+  value: {},
+};
+
 function safeLocalStorageGet(key: string): string | null {
   try {
     if (typeof localStorage === 'undefined') return null;
@@ -157,18 +191,36 @@ function safeJsonParse<T>(value: string | null, fallback: T): T {
 }
 
 function readCurrentProfile(): {name: string; photo: string} {
-  const session = safeJsonParse<any>(typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null, {});
-  const cache = safeJsonParse<any>(typeof localStorage !== 'undefined' ? localStorage.getItem(PROFILE_CACHE_KEY) : null, {});
-  return {
+  const sessionRaw = safeLocalStorageGet(SESSION_KEY) || '';
+  const cacheRaw = safeLocalStorageGet(PROFILE_CACHE_KEY) || '';
+  if (sessionRaw === cachedProfileState.sessionRaw && cacheRaw === cachedProfileState.cacheRaw) {
+    return cachedProfileState.value;
+  }
+
+  const session = safeJsonParse<any>(sessionRaw, {});
+  const cache = safeJsonParse<any>(cacheRaw, {});
+  const value = {
     name: pickString(cache?.name, session?.name, 'Library User'),
     photo: pickString(cache?.photo, ''),
   };
+  cachedProfileState.sessionRaw = sessionRaw;
+  cachedProfileState.cacheRaw = cacheRaw;
+  cachedProfileState.value = value;
+  return value;
 }
 
 function readSessionUserId(): string {
-  const session = safeJsonParse<any>(safeLocalStorageGet(SESSION_KEY), {});
+  const sessionRaw = safeLocalStorageGet(SESSION_KEY) || '';
+  if (sessionRaw === cachedSessionState.sessionRaw) {
+    return cachedSessionState.value;
+  }
+
+  const session = safeJsonParse<any>(sessionRaw, {});
   const id = String(session?.id || '').trim();
-  return id && id !== 'guest' ? id : '';
+  const value = id && id !== 'guest' ? id : '';
+  cachedSessionState.sessionRaw = sessionRaw;
+  cachedSessionState.value = value;
+  return value;
 }
 
 function fallbackProfilePhoto(seed: string, size = 100): string {
@@ -220,13 +272,23 @@ function getRatingUserKey(): string {
 }
 
 function readStoredRatings(): StoredRatingsByUser {
-  const raw = safeLocalStorageGet(ONE_TIME_RATINGS_KEY);
+  const raw = safeLocalStorageGet(ONE_TIME_RATINGS_KEY) || '';
+  if (raw === cachedRatingsState.raw) {
+    return cachedRatingsState.value;
+  }
+
   const parsed = safeJsonParse<any>(raw, {});
-  return parsed && typeof parsed === 'object' ? (parsed as StoredRatingsByUser) : {};
+  const value = parsed && typeof parsed === 'object' ? (parsed as StoredRatingsByUser) : {};
+  cachedRatingsState.raw = raw;
+  cachedRatingsState.value = value;
+  return value;
 }
 
 function writeStoredRatings(next: StoredRatingsByUser) {
-  safeLocalStorageSet(ONE_TIME_RATINGS_KEY, JSON.stringify(next));
+  const raw = JSON.stringify(next);
+  safeLocalStorageSet(ONE_TIME_RATINGS_KEY, raw);
+  cachedRatingsState.raw = raw;
+  cachedRatingsState.value = next;
 }
 
 function getStoredBookRating(userKey: string, bookId: string): number {
@@ -481,11 +543,90 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
   const [authorInfo, setAuthorInfo] = React.useState<{id?: string; name?: string; photo?: string; followers_count?: number; is_following?: boolean} | null>(null);
   const [isTogglingFollow, setIsTogglingFollow] = React.useState(false);
   const [nowTick, setNowTick] = React.useState(() => Date.now());
+  const [readerAsset, setReaderAsset] = React.useState<{url: string; mimeType: string; fileName?: string} | null>(null);
+  const [isOpeningReader, setIsOpeningReader] = React.useState(false);
+  const readerAssetPromiseRef = React.useRef<Promise<ReadableBookAsset> | null>(null);
+  const readerAssetCacheRef = React.useRef<ReadableBookAsset | null>(null);
 
   React.useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (readerAsset?.url && readerAsset.url.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(readerAsset.url);
+        } catch {
+          // ignore revoke failures
+        }
+      }
+    };
+  }, [readerAsset?.url]);
+
+  React.useEffect(() => {
+    if (!shouldOpenReaderDirectly()) return;
+    let alive = true;
+
+    const promise = bookService.readBlobUrl(normalizedBookId);
+    readerAssetPromiseRef.current = promise;
+
+    void promise
+      .then((asset) => {
+        if (!alive) {
+          if (asset.url.startsWith('blob:')) {
+            try {
+              URL.revokeObjectURL(asset.url);
+            } catch {
+              // ignore revoke failures
+            }
+          }
+          return;
+        }
+        readerAssetCacheRef.current = asset;
+      })
+      .catch(() => {
+        if (!alive) return;
+        readerAssetPromiseRef.current = null;
+      });
+
+    return () => {
+      alive = false;
+      readerAssetPromiseRef.current = null;
+      const cached = readerAssetCacheRef.current;
+      readerAssetCacheRef.current = null;
+      if (cached?.url && cached.url.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(cached.url);
+        } catch {
+          // ignore revoke failures
+        }
+      }
+    };
+  }, [normalizedBookId]);
+
+  const enterFullscreen = async () => {
+    if (typeof document === 'undefined') return;
+    const target = document.documentElement;
+    if (typeof target.requestFullscreen !== 'function') return;
+    if (document.fullscreenElement) return;
+    try {
+      await target.requestFullscreen();
+    } catch {
+      // Some mobile browsers block fullscreen requests; fall back to the overlay.
+    }
+  };
+
+  const exitFullscreen = async () => {
+    if (typeof document === 'undefined') return;
+    if (!document.fullscreenElement) return;
+    try {
+      await document.exitFullscreen();
+    } catch {
+      // ignore exit failures
+    }
+  };
 
   React.useEffect(() => {
     const authorName = pickString(currentBook.author);
@@ -1186,14 +1327,49 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     }
     const normalizedBookId = normalizeBackendBookId(currentBook.id);
     if (shouldOpenReaderDirectly()) {
+      setIsOpeningReader(true);
+      setReaderAsset(null);
+      void enterFullscreen();
       try {
-        const asset = await bookService.readBlobUrl(normalizedBookId);
+        const asset =
+          readerAssetCacheRef.current ||
+          (readerAssetPromiseRef.current ? await readerAssetPromiseRef.current : await bookService.readBlobUrl(normalizedBookId));
+        readerAssetCacheRef.current = null;
+        readerAssetPromiseRef.current = null;
+        setReaderAsset((prev) => {
+          if (prev?.url && prev.url.startsWith('blob:')) {
+            try {
+              URL.revokeObjectURL(prev.url);
+            } catch {
+              // ignore revoke failures
+            }
+          }
+          return asset;
+        });
         trackRead(normalizedBookId);
-        window.location.href = asset.url;
-      } catch {
-        const url = await bookService.readUrl(normalizedBookId);
-        trackRead(normalizedBookId);
-        window.location.href = url;
+      } catch (error) {
+        try {
+          const url = await bookService.readUrl(normalizedBookId);
+          setReaderAsset((prev) => {
+            if (prev?.url && prev.url.startsWith('blob:')) {
+              try {
+                URL.revokeObjectURL(prev.url);
+              } catch {
+                // ignore revoke failures
+              }
+            }
+            return {url, mimeType: /\.pdf(\?|#|$)/i.test(url) ? 'application/pdf' : 'text/html'};
+          });
+          trackRead(normalizedBookId);
+        } catch (fallbackError: any) {
+          void sweetAlert(fallbackError?.message || (error as any)?.message || 'Unable to open this book.', {
+            icon: 'error',
+            title: 'Error',
+          });
+          void exitFullscreen();
+        }
+      } finally {
+        setIsOpeningReader(false);
       }
       return;
     }
@@ -1220,8 +1396,75 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     }
   };
 
+  const closeReader = () => {
+    void exitFullscreen();
+    setReaderAsset((prev) => {
+      if (prev?.url && prev.url.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(prev.url);
+        } catch {
+          // ignore revoke failures
+        }
+      }
+      return null;
+    });
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-20 py-8 sm:py-10 space-y-10 sm:space-y-12">
+      {isOpeningReader && !readerAsset ? (
+        <div className="fixed inset-0 z-[219] flex flex-col bg-[#0b1220] text-white">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-[#111827] px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-400">Reading</p>
+              <h2 className="truncate text-sm font-bold text-white">{currentBook.title || 'Reader'}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={closeReader}
+              className="shrink-0 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white/90"
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center px-4">
+            <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-white/5 px-6 py-8 text-center shadow-2xl shadow-black/30">
+              <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/15 border-t-cyan-400" />
+              <p className="text-base font-bold text-white">Opening reader</p>
+              <p className="mt-2 text-sm text-white/60">Loading the book for this phone...</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {readerAsset ? (
+        readerAsset.mimeType.toLowerCase().includes('pdf') ? (
+          <PdfReader src={readerAsset.url} title={currentBook.title || 'Reader'} onClose={closeReader} />
+        ) : (
+          <div className="fixed inset-0 z-[200] flex flex-col bg-bg w-[100dvw] h-[100dvh]">
+            <div className="flex items-center justify-between gap-3 border-b border-border bg-bg/95 px-4 py-3 backdrop-blur-xl">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Reading</p>
+                <h2 className="truncate text-sm font-bold text-text">{currentBook.title}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={closeReader}
+                className="shrink-0 rounded-full border border-border bg-surface px-4 py-2 text-xs font-bold text-text hover:border-primary/30 hover:text-primary"
+              >
+                Close
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 bg-black">
+              <iframe
+                title={currentBook.title || 'Reader'}
+                src={readerAsset.url}
+                allowFullScreen
+                className="h-full w-full border-0 bg-white"
+              />
+            </div>
+          </div>
+        )
+      ) : null}
       {/* Breadcrumbs */}
       <nav className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-text-muted">
         <button type="button" onClick={() => onNavigate('home')} className="hover:text-primary transition-colors">Home</button>
@@ -1245,11 +1488,12 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
                   void sweetAlert(err?.message || 'Unable to open this book.', {icon: 'error', title: 'Error'});
                 });
               }}
-              className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2"
+              disabled={isOpeningReader}
+              className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2 disabled:opacity-60"
               title="Read in browser"
             >
               <Icons.BookOpen className="size-4" />
-              Read Now
+              {isOpeningReader ? 'Opening...' : 'Read Now'}
             </button>
             <button type="button"
               onClick={() => {
