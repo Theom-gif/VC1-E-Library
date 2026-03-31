@@ -1,6 +1,7 @@
 import React from 'react';
 import { Icons } from '../types';
 import { motion } from 'motion/react';
+import bookService from '../service/bookService';
 import notificationService from '../service/notificationService';
 import authService from '../service/authService';
 import {hasAuthenticatedSession} from '../utils/readerUpgrade';
@@ -127,6 +128,21 @@ function colorForType(type: string) {
   if (t === 'download') return 'bg-blue-500/20 text-blue-400 border-blue-500/20';
   if (t === 'goal' || t === 'achievement') return 'bg-orange-500/20 text-orange-400 border-orange-500/20';
   return 'bg-primary/20 text-primary border-primary/20';
+}
+
+function resolveInternalPage(actionUrl: string): string | null {
+  const path = String(actionUrl || '').trim().split(/[?#]/)[0];
+  if (!path) return null;
+  if (path === '/' || path === '/home') return 'home';
+  if (path === '/authors') return 'authors';
+  if (path === '/categories') return 'categories';
+  if (path === '/favorites') return 'favorites';
+  if (path === '/downloads') return 'downloads';
+  if (path === '/settings') return 'settings';
+  if (path === '/profile') return 'profile';
+  if (path === '/notifications') return 'notifications';
+  if (path === '/search') return 'search';
+  return null;
 }
 
 export default function NotificationsPage({ onNavigate }: NotificationsPageProps) {
@@ -340,6 +356,39 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
     }
   };
 
+  const handleNotificationClick = React.useCallback(
+    async (notification: UiNotification) => {
+      await markRead(notification.id);
+
+      const actionUrl = String(notification.actionUrl || '').trim();
+      if (!actionUrl) return;
+
+      if (/^https?:\/\//i.test(actionUrl)) {
+        window.open(actionUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      const internalPage = resolveInternalPage(actionUrl);
+      if (internalPage) {
+        onNavigate(internalPage);
+        return;
+      }
+
+      const bookMatch = actionUrl.match(/^\/(?:book-details|books|reader\/books)\/([^/?#]+)$/i);
+      if (bookMatch?.[1]) {
+        try {
+          const payload = await bookService.getById(decodeURIComponent(bookMatch[1]));
+          if (payload?.item) {
+            onNavigate('book-details', payload.item);
+          }
+        } catch {
+          // Ignore book resolution failures; the click still marks the notification as read.
+        }
+      }
+    },
+    [markRead, onNavigate],
+  );
+
   return (
     <div className="mx-auto max-w-4xl px-6 lg:px-20 py-10 space-y-10">
       <div className="flex items-center justify-between">
@@ -389,7 +438,17 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className={`group p-6 rounded-3xl border border-border bg-surface hover:border-primary/30 transition-all relative ${n.unread ? 'ring-1 ring-primary/20' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label={`Open notification ${n.title}`}
+            onClick={() => void handleNotificationClick(n)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                void handleNotificationClick(n);
+              }
+            }}
+            className={`group p-6 rounded-3xl border border-border bg-surface hover:border-primary/30 transition-all relative ${n.unread ? 'ring-1 ring-primary/20' : ''} ${n.actionUrl ? 'cursor-pointer' : 'cursor-default'}`}
           >
             {n.unread && (
               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-12 bg-primary rounded-r-full" />
@@ -408,7 +467,11 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
                 </div>
                 <div className="flex items-center gap-4 pt-2">
                   <button
-                    onClick={() => void remove(n.id)}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void remove(n.id);
+                    }}
                     className="text-xs font-bold text-text-muted hover:text-red-500 transition-colors uppercase tracking-widest"
                   >
                     Delete

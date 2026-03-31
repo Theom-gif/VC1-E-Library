@@ -62,16 +62,6 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
         requestAuth('read-limit');
         return;
       }
-      if (downloaded) {
-        void openOffline(normalizedBookId)
-          .then(() => {
-            trackRead(normalizedBookId);
-          })
-          .catch((err: any) => {
-            void sweetAlert(err?.message || 'Unable to open offline book.', {icon: 'error', title: 'Error'});
-          });
-        return;
-      }
 
       const tab = window.open('', '_blank');
       if (!tab) {
@@ -135,7 +125,7 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
             type="button"
             className="p-2 rounded-full bg-primary text-white shadow-lg hover:scale-110 transition-transform"
             onClick={handleRead}
-            title={downloaded ? 'Read offline' : 'Read in browser'}
+            title="Read in browser"
           >
             <Icons.BookOpen className="size-4" />
           </button>
@@ -162,7 +152,7 @@ export default function BookCard({book, onClick, onNavigate, onAuthorClick}: Boo
             type="button"
             className="p-2 rounded-full bg-primary text-white shadow-lg active:scale-95 transition-transform"
             onClick={handleRead}
-            aria-label={downloaded ? 'Read offline' : 'Read in browser'}
+            aria-label="Read in browser"
           >
             <Icons.BookOpen className="size-4" />
           </button>

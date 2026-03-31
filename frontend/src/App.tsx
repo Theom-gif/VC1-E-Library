@@ -560,7 +560,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       setShowAccessPrompt(true);
       return false;
     }
-    if (page !== currentPage && !canNavigateAway()) return false;
+    if (page !== 'notifications' && page !== currentPage && !canNavigateAway()) return false;
 
     if (page === 'notifications') {
       // Opening notifications should clear the badge and mark current items as read.
