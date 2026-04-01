@@ -131,6 +131,30 @@ export const authService = {
     throw lastError || new Error('Registration endpoint not found');
   },
 
+  authorRegister: async (payload) => {
+    const normalizedPayload =
+      payload && typeof payload === 'object'
+        ? {...payload, email: normalizeEmail(payload.email)}
+        : payload;
+    const authorRegisterPaths = [
+      '/api/auth/author_registration',
+      '/api/auth/author-registration',
+      '/api/auth/author_register',
+    ];
+    let lastError;
+
+    for (const path of authorRegisterPaths) {
+      try {
+        return await apiClient.post(path, normalizedPayload);
+      } catch (error) {
+        if (error?.status !== 404) throw error;
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('Author registration endpoint not found');
+  },
+
   logout: async () => {
     try {
       await apiClient.post('/api/logout');

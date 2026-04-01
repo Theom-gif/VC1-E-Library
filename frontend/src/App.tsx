@@ -363,7 +363,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
-    const shouldLockScroll = Boolean(showAccessPrompt || showReauthPrompt || (showHomeAuthOverlay && authUser?.id === 'guest'));
+    const shouldLockScroll = Boolean(showAccessPrompt || showReauthPrompt);
     if (!shouldLockScroll) return;
 
     const body = document.body;
@@ -381,7 +381,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       body.style.overflow = previousOverflow;
       body.style.paddingRight = previousPaddingRight;
     };
-  }, [authUser?.id, showAccessPrompt, showHomeAuthOverlay, showReauthPrompt]);
+  }, [showAccessPrompt, showReauthPrompt]);
 
   React.useEffect(() => {
     setUser((prev) => ({
