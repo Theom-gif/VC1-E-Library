@@ -20,6 +20,41 @@ const pickString = (value) => {
 
 const normalizeEmail = (value) => pickString(value).trim().toLowerCase();
 
+const normalizeAdminTarget = (value) => {
+  if (value && typeof value === 'object') {
+    return (
+      pickString(value.id) ||
+      pickString(value.user_id) ||
+      pickString(value.userId) ||
+      pickString(value.email) ||
+      pickString(value.email_address) ||
+      pickString(value.slug) ||
+      pickString(value.name)
+    );
+  }
+
+  return pickString(value);
+};
+
+const callAdminAuthorAction = async (action, user) => {
+  const target = normalizeAdminTarget(user);
+  if (!target) throw new Error('user is required');
+
+  const path = `/api/admin/${action}-authors/${encodeURIComponent(target)}`;
+  let lastError;
+
+  for (const method of ['post', 'patch']) {
+    try {
+      return await apiClient[method](path, null, {headers: {Accept: 'application/json'}});
+    } catch (error) {
+      if (error?.status !== 404 && error?.status !== 405) throw error;
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error(`${action} author endpoint not found`);
+};
+
 const findTokenDeep = (value, depth = 0) => {
   if (!value || depth > 6) return '';
   if (Array.isArray(value)) {
@@ -130,6 +165,34 @@ export const authService = {
 
     throw lastError || new Error('Registration endpoint not found');
   },
+
+  authorRegister: async (payload) => {
+    const normalizedPayload =
+      payload && typeof payload === 'object'
+        ? {...payload, email: normalizeEmail(payload.email)}
+        : payload;
+    const authorRegisterPaths = [
+      '/api/auth/author_registration',
+      '/api/auth/author-registration',
+      '/api/auth/author_register',
+    ];
+    let lastError;
+
+    for (const path of authorRegisterPaths) {
+      try {
+        return await apiClient.post(path, normalizedPayload);
+      } catch (error) {
+        if (error?.status !== 404) throw error;
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error('Author registration endpoint not found');
+  },
+
+  approveAuthor: async (user) => callAdminAuthorAction('approve', user),
+
+  rejectAuthor: async (user) => callAdminAuthorAction('reject', user),
 
   logout: async () => {
     try {

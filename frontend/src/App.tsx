@@ -363,25 +363,28 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
-    const shouldLockScroll = Boolean(showAccessPrompt || showReauthPrompt || (showHomeAuthOverlay && authUser?.id === 'guest'));
+    const shouldLockScroll = Boolean(showAccessPrompt || showReauthPrompt);
     if (!shouldLockScroll) return;
 
     const body = document.body;
     const html = document.documentElement;
     const previousOverflow = body.style.overflow;
+    const previousHtmlOverflow = html.style.overflow;
     const previousPaddingRight = body.style.paddingRight;
 
     const scrollbarWidth = window.innerWidth - html.clientWidth;
     body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
     if (scrollbarWidth > 0) {
       body.style.paddingRight = `${scrollbarWidth}px`;
     }
 
     return () => {
       body.style.overflow = previousOverflow;
+      html.style.overflow = previousHtmlOverflow;
       body.style.paddingRight = previousPaddingRight;
     };
-  }, [authUser?.id, showAccessPrompt, showHomeAuthOverlay, showReauthPrompt]);
+  }, [showAccessPrompt, showReauthPrompt]);
 
   React.useEffect(() => {
     setUser((prev) => ({
@@ -784,7 +787,7 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
       case 'search': return <SearchPage query={searchQuery} results={filteredBooks} onNavigate={navigateTo} />;
       case 'book-details': return <BookDetails book={selectedBook || books[0]} onNavigate={navigateTo} />;
       case 'author-details': return <AuthorDetails author={selectedAuthor || 'Unknown Author'} onNavigate={navigateTo} />;
-      case 'notifications': return <NotificationsPage onNavigate={navigateTo} />;
+      case 'notifications': return <NotificationsPage onNavigate={navigateTo} userRole={authUser?.role} />;
       case 'logout': return <Logout onLogout={handleLogout} onNavigate={navigateTo} />;
       default:
         return (

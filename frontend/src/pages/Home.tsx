@@ -5,6 +5,7 @@ import BookCard from '../components/BookCard';
 import CoverImage from '../components/CoverImage';
 import ModalPortal from '../components/ModalPortal';
 import { useLibrary } from '../context/LibraryContext';
+import authService from '../service/authService';
 
 interface HomeProps {
   onNavigate: (page: any, data?: any) => void;
@@ -54,6 +55,80 @@ function extractAuthErrorText(err: any, fallback: string) {
   }
 
   return fallback;
+}
+
+const AUTHOR_APPLICATION_STORAGE_KEY = 'elibrary_author_application_pending_v1';
+
+type AuthorApplicationForm = {
+  firstname: string;
+  lastname: string;
+  email: string;
+  password: string;
+  password_confirmation: string;
+  bio: string;
+};
+
+type PendingAuthorApplication = Omit<AuthorApplicationForm, 'password' | 'password_confirmation'> & {
+  status: 'pending';
+  submittedAt: string;
+};
+
+function readPendingAuthorApplication(): PendingAuthorApplication | null {
+  try {
+    const raw = localStorage.getItem(AUTHOR_APPLICATION_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const firstname = String((parsed as any).firstname || '').trim();
+    const lastname = String((parsed as any).lastname || '').trim();
+    const email = String((parsed as any).email || '').trim().toLowerCase();
+    const bio = String((parsed as any).bio || '').trim();
+    const submittedAt = String((parsed as any).submittedAt || '').trim() || new Date().toISOString();
+    const status = String((parsed as any).status || '').trim().toLowerCase();
+
+    if (!firstname || !lastname || !email) return null;
+    if (status && status !== 'pending') return null;
+
+    return {
+      firstname,
+      lastname,
+      email,
+      bio,
+      status: 'pending',
+      submittedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePendingAuthorApplication(form: Pick<AuthorApplicationForm, 'firstname' | 'lastname' | 'email' | 'bio'>) {
+  const payload: PendingAuthorApplication = {
+    firstname: form.firstname.trim(),
+    lastname: form.lastname.trim(),
+    email: form.email.trim().toLowerCase(),
+    bio: form.bio.trim(),
+    status: 'pending',
+    submittedAt: new Date().toISOString(),
+  };
+
+  try {
+    localStorage.setItem(AUTHOR_APPLICATION_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage issues
+  }
+
+  return payload;
+}
+
+function clearPendingAuthorApplication() {
+  try {
+    localStorage.removeItem(AUTHOR_APPLICATION_STORAGE_KEY);
+  } catch {
+    // ignore storage issues
+  }
 }
 
 export default function Home({
@@ -134,7 +209,7 @@ export default function Home({
     if (n <= 0) return '0';
     return n.toFixed(1).replace(/\.0$/, '');
   };
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'author'>('login');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     firstname: '',
@@ -143,16 +218,33 @@ export default function Home({
     password: '',
     password_confirmation: '',
   });
+  const [authorApplicationForm, setAuthorApplicationForm] = useState<AuthorApplicationForm>({
+    firstname: '',
+    lastname: '',
+    email: '',
+    password: '',
+    password_confirmation: '',
+    bio: '',
+  });
+  const [pendingAuthorApplication, setPendingAuthorApplication] = useState<PendingAuthorApplication | null>(() =>
+    typeof window !== 'undefined' ? readPendingAuthorApplication() : null,
+  );
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
+  const [showAuthorPassword, setShowAuthorPassword] = useState(false);
+  const [showAuthorConfirmPassword, setShowAuthorConfirmPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const hasPendingAuthorApplication = Boolean(pendingAuthorApplication);
 
   React.useEffect(() => {
     if (canShowAuthOverlay) {
-      setAuthMode(initialAuthMode === 'register' ? 'register' : 'login');
+      const nextPendingApplication = readPendingAuthorApplication();
+      setPendingAuthorApplication(nextPendingApplication);
+      setAuthMode(nextPendingApplication ? 'author' : initialAuthMode === 'register' ? 'register' : 'login');
       setAuthError('');
+      setIsSubmitting(false);
     }
   }, [canShowAuthOverlay, initialAuthMode]);
 
@@ -224,6 +316,79 @@ export default function Home({
       setIsSubmitting(false);
     }
   };
+
+  const handleAuthorApplicationSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const firstname = authorApplicationForm.firstname.trim();
+    const lastname = authorApplicationForm.lastname.trim();
+    const email = authorApplicationForm.email.trim().toLowerCase();
+    const password = authorApplicationForm.password;
+    const passwordConfirmation = authorApplicationForm.password_confirmation;
+    const bio = authorApplicationForm.bio.trim();
+
+    if (firstname.length < 2 || lastname.length < 2) {
+      setAuthError('First name and last name must each be at least 2 characters.');
+      return;
+    }
+    if (!email) {
+      setAuthError('Email is required.');
+      return;
+    }
+    if (password.length < 8) {
+      setAuthError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== passwordConfirmation) {
+      setAuthError('Password confirmation does not match.');
+      return;
+    }
+    if (bio.length < 20) {
+      setAuthError('Bio must be at least 20 characters.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setAuthError('');
+
+    try {
+      await authService.authorRegister({
+        firstname,
+        lastname,
+        name: `${firstname} ${lastname}`.trim(),
+        email,
+        password,
+        password_confirmation: passwordConfirmation,
+        confirm_password: passwordConfirmation,
+        bio,
+        role: 'author',
+      });
+
+      const nextPendingApplication = writePendingAuthorApplication({
+        firstname,
+        lastname,
+        email,
+        bio,
+      });
+
+      setPendingAuthorApplication(nextPendingApplication);
+      setAuthorApplicationForm({
+        firstname: '',
+        lastname: '',
+        email: '',
+        password: '',
+        password_confirmation: '',
+        bio: '',
+      });
+      setShowAuthorPassword(false);
+      setShowAuthorConfirmPassword(false);
+      setAuthMode('author');
+    } catch (err: any) {
+      setAuthError(getAuthError(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-16">
       {(isLoading || showError || showMock) && (
@@ -261,62 +426,108 @@ export default function Home({
 
       {canShowAuthOverlay && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4 py-10 overflow-y-auto backdrop-blur-md">
-            <div className="w-full max-w-2xl rounded-3xl border border-border bg-bg/90 p-6 md:p-8 shadow-2xl">
+          <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto no-scrollbar bg-slate-950/55 px-4 py-6 backdrop-blur-xl">
+            <div className="my-auto mx-auto w-full max-w-4xl max-h-[calc(100vh-3rem)] overflow-y-auto no-scrollbar rounded-[2rem] border border-border/70 bg-bg/95 p-6 shadow-[0_30px_100px_rgba(15,23,42,0.25)] ring-1 ring-white/10 md:p-8">
               <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-primary">
-                  <Icons.User className="size-3" />
-                  Reader Access Required
+                <div className="space-y-3">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.22em] text-primary">
+                    <Icons.User className="size-3" />
+                    Reader Access Required
+                  </div>
+                  <div>
+                    <h2 className="text-3xl md:text-4xl font-black tracking-tight text-text">
+                      {authOverlayReason === 'read-limit' ? 'Reading limit reached' : 'Reader access required'}
+                    </h2>
+                    <p className="mt-2 max-w-2xl text-sm md:text-base leading-6 text-text-muted">
+                      {authOverlayReason === 'read-limit'
+                        ? 'You have reached the free reading limit. Login or register as a Reader to continue.'
+                        : 'Please login or register as a Reader to unlock this feature.'}
+                    </p>
+                  </div>
                 </div>
-                <h2 className="mt-4 text-2xl md:text-3xl font-bold text-text">
-                  {authOverlayReason === 'read-limit' ? 'Reading limit reached' : 'Reader access required'}
-                </h2>
-                <p className="mt-2 text-sm text-text-muted">
-                  {authOverlayReason === 'read-limit'
-                    ? 'You have reached the free reading limit. Login or register as a Reader to continue.'
-                    : 'Please login or register as a Reader to unlock this feature.'}
-                </p>
+                {onCloseAuthOverlay ? (
+                  <button
+                    type="button"
+                    onClick={onCloseAuthOverlay}
+                    className="inline-flex size-10 items-center justify-center rounded-2xl border border-border bg-surface text-text-muted transition-colors hover:text-text"
+                    aria-label="Close"
+                  >
+                    <Icons.X className="size-4" />
+                  </button>
+                ) : null}
               </div>
-              {onCloseAuthOverlay ? (
+
+              <div className="mt-6 flex justify-end">
                 <button
                   type="button"
-                  onClick={onCloseAuthOverlay}
-                  className="rounded-lg border border-border bg-surface px-2 py-2 text-text-muted hover:text-text transition-colors"
-                  aria-label="Close"
+                  onClick={() => {
+                    clearPendingAuthorApplication();
+                    setPendingAuthorApplication(null);
+                    setAuthMode('author');
+                    setAuthError('');
+                    setAuthorApplicationForm({
+                      firstname: '',
+                      lastname: '',
+                      email: '',
+                      password: '',
+                      password_confirmation: '',
+                      bio: '',
+                    });
+                  }}
+                  className={`group relative inline-flex items-center gap-3 overflow-hidden rounded-full border px-4 py-2.5 text-left transition-all ${
+                    authMode === 'author'
+                      ? 'border-primary/35 bg-[linear-gradient(135deg,rgba(19,200,236,0.98),rgba(13,148,206,0.96),rgba(37,99,235,0.94))] text-white shadow-[0_14px_34px_rgba(19,200,236,0.28)]'
+                      : 'border-primary/25 bg-[linear-gradient(135deg,rgba(236,253,255,0.98),rgba(224,248,252,0.95),rgba(219,244,255,0.92))] text-primary shadow-[0_10px_24px_rgba(19,200,236,0.12)] hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(19,200,236,0.18)]'
+                  }`}
                 >
-                  <Icons.X className="size-4" />
+                  <span className="flex size-9 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30 transition-transform group-hover:scale-105">
+                    <Icons.Sparkles className="size-4" />
+                  </span>
+                  <span className="flex flex-col leading-tight">
+                    <span className="text-[13px] font-extrabold tracking-wide">
+                      {hasPendingAuthorApplication ? 'Apply with another email' : 'Become an Author'}
+                    </span>
+                    <span className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${authMode === 'author' ? 'text-white/80' : 'text-primary/70'}`}>
+                      Submit for review
+                    </span>
+                  </span>
+                  <span className={`ml-1 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${authMode === 'author' ? 'bg-white/18 text-white/90' : 'bg-primary/10 text-primary'}`}>
+                    New
+                  </span>
                 </button>
-              ) : null}
-            </div>
+              </div>
 
-            <div className="mt-6 flex gap-2 rounded-2xl bg-surface p-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('login');
-                  setAuthError('');
-                }}
-                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${authMode === 'login' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
-                  }`}
-              >
-                Login
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('register');
-                  setAuthError('');
-                }}
-                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${authMode === 'register' ? 'bg-primary text-white' : 'text-text-muted hover:text-text'
-                  }`}
-              >
-                Register
-              </button>
-            </div>
+              {authMode !== 'author' ? (
+                <div className="mt-4 grid grid-cols-2 gap-2 rounded-3xl border border-border/60 bg-surface/70 p-2 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthError('');
+                    }}
+                    className={`rounded-2xl px-3 py-3 text-sm font-semibold transition-all ${
+                      authMode === 'login' ? 'bg-bg text-text shadow-sm ring-1 ring-border' : 'text-text-muted hover:text-text'
+                    }`}
+                  >
+                    Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('register');
+                      setAuthError('');
+                    }}
+                    className={`rounded-2xl px-3 py-3 text-sm font-semibold transition-all ${
+                      authMode === 'register' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-text-muted hover:text-text'
+                    }`}
+                  >
+                    Register
+                  </button>
+                </div>
+              ) : null}
 
             {authMode === 'login' ? (
-              <form onSubmit={handleLoginSubmit} className="mt-6 grid gap-4">
+              <form onSubmit={handleLoginSubmit} className="mt-6 grid gap-4 rounded-3xl border border-border/60 bg-bg/80 p-5 shadow-sm md:p-6">
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Email / Gmail</label>
                   <input
@@ -356,20 +567,20 @@ export default function Home({
                   </div>
                 </div>
                 {authError && (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">
+                  <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-400">
                     {authError}
                   </div>
                 )}
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-60"
+                  className="rounded-2xl bg-primary px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >
                   {isSubmitting ? 'Signing in...' : 'Sign In as Reader'}
                 </button>
               </form>
-            ) : (
-              <form onSubmit={handleRegisterSubmit} className="mt-6 grid gap-4">
+            ) : authMode === 'register' ? (
+              <form onSubmit={handleRegisterSubmit} className="mt-6 grid gap-4 rounded-3xl border border-border/60 bg-bg/80 p-5 shadow-sm md:p-6">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">First Name</label>
@@ -462,19 +673,221 @@ export default function Home({
                   </div>
                 </div>
                 {authError && (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs text-red-400">
+                  <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-400">
                     {authError}
                   </div>
                 )}
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-60"
+                  className="rounded-2xl bg-primary px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                 >
                   {isSubmitting ? 'Creating account...' : 'Register as Reader'}
                 </button>
               </form>
-            )}
+            ) : authMode === 'author' ? (
+              pendingAuthorApplication ? (
+                <div className="mt-6 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-5 md:p-6">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-emerald-500/15 p-2 text-emerald-300">
+                      <Icons.CheckCheck className="size-5" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-lg font-bold text-text">Your author application is pending review.</p>
+                      <p className="mt-2 text-sm leading-relaxed text-text-muted">
+                        We received your request for{' '}
+                        <span className="font-semibold text-text">
+                          {pendingAuthorApplication.firstname} {pendingAuthorApplication.lastname}
+                        </span>
+                        . Please wait for admin approval before you can publish as an author.
+                      </p>
+                      <div className="mt-4 grid gap-2 text-sm text-text-muted sm:grid-cols-2">
+                        <p>
+                          <span className="font-semibold text-text">Email:</span> {pendingAuthorApplication.email}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-text">Status:</span> Waiting for admin approval
+                        </p>
+                      </div>
+                      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearPendingAuthorApplication();
+                            setPendingAuthorApplication(null);
+                            setAuthMode('author');
+                            setAuthError('');
+                            setAuthorApplicationForm({
+                              firstname: '',
+                              lastname: '',
+                              email: '',
+                              password: '',
+                              password_confirmation: '',
+                              bio: '',
+                            });
+                          }}
+                          className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-400"
+                        >
+                          Register with another email
+                        </button>
+                        {onCloseAuthOverlay ? (
+                          <button
+                            type="button"
+                            onClick={onCloseAuthOverlay}
+                            className="rounded-xl border border-border bg-bg px-5 py-3 text-sm font-bold text-text-muted transition-colors hover:text-text"
+                          >
+                            Close
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <form onSubmit={handleAuthorApplicationSubmit} className="mt-6 grid gap-4 rounded-3xl border border-border/60 bg-bg/80 p-5 shadow-sm md:p-6">
+                  <div className="flex items-start justify-between gap-3 rounded-2xl border border-border/60 bg-surface/70 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-bold text-text">Want to become an author?</p>
+                      <p className="mt-1 text-xs text-text-muted">
+                        Fill in this form to request author access. Your application will be sent to the admin team for review.
+                        Please provide accurate information about yourself and why you want to publish books on this platform.
+                        After review, you will receive a result telling you whether your request was approved or rejected.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('login');
+                        setAuthError('');
+                      }}
+                      className="rounded-xl border border-border bg-bg px-3 py-2 text-xs font-bold text-text-muted transition-colors hover:text-text"
+                    >
+                      Back
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">First Name</label>
+                      <input
+                        type="text"
+                        value={authorApplicationForm.firstname}
+                        onChange={(event) => {
+                          setAuthorApplicationForm((prev) => ({...prev, firstname: event.target.value}));
+                          setAuthError('');
+                        }}
+                        required
+                        className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Last Name</label>
+                      <input
+                        type="text"
+                        value={authorApplicationForm.lastname}
+                        onChange={(event) => {
+                          setAuthorApplicationForm((prev) => ({...prev, lastname: event.target.value}));
+                          setAuthError('');
+                        }}
+                        required
+                        className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Email</label>
+                    <input
+                      type="email"
+                      value={authorApplicationForm.email}
+                      onChange={(event) => {
+                        setAuthorApplicationForm((prev) => ({...prev, email: event.target.value}));
+                        setAuthError('');
+                      }}
+                      required
+                      className="w-full rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Password</label>
+                      <div className="relative">
+                        <input
+                          type={showAuthorPassword ? 'text' : 'password'}
+                          value={authorApplicationForm.password}
+                          onChange={(event) => {
+                            setAuthorApplicationForm((prev) => ({...prev, password: event.target.value}));
+                            setAuthError('');
+                          }}
+                          placeholder="********"
+                          required
+                          className="w-full rounded-xl border border-border bg-bg px-4 py-3 pr-12 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAuthorPassword((value) => !value)}
+                          aria-label={showAuthorPassword ? 'Hide password' : 'Show password'}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-text-muted transition-colors hover:text-text"
+                        >
+                          {showAuthorPassword ? <Icons.EyeOff className="size-4" /> : <Icons.Eye className="size-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Confirm Password</label>
+                      <div className="relative">
+                        <input
+                          type={showAuthorConfirmPassword ? 'text' : 'password'}
+                          value={authorApplicationForm.password_confirmation}
+                          onChange={(event) => {
+                            setAuthorApplicationForm((prev) => ({...prev, password_confirmation: event.target.value}));
+                            setAuthError('');
+                          }}
+                          placeholder="********"
+                          required
+                          className="w-full rounded-xl border border-border bg-bg px-4 py-3 pr-12 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAuthorConfirmPassword((value) => !value)}
+                          aria-label={showAuthorConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-text-muted transition-colors hover:text-text"
+                        >
+                          {showAuthorConfirmPassword ? <Icons.EyeOff className="size-4" /> : <Icons.Eye className="size-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-text-muted">Bio</label>
+                    <textarea
+                      value={authorApplicationForm.bio}
+                      onChange={(event) => {
+                        setAuthorApplicationForm((prev) => ({...prev, bio: event.target.value}));
+                        setAuthError('');
+                      }}
+                      rows={4}
+                      placeholder="Tell readers who you are, what you write, and what you want to publish."
+                      required
+                      className="w-full resize-none rounded-xl border border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                  {authError && (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-400">
+                      {authError}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="rounded-2xl bg-primary px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {isSubmitting ? 'Submitting application...' : 'Request Author Access'}
+                  </button>
+                  <p className="text-xs text-text-muted">
+                    Submit your information for admin review. We’ll notify you when your request is approved or rejected.
+                  </p>
+                </form>
+              )
+            ) : null}
           </div>
           </div>
         </ModalPortal>

@@ -8,6 +8,7 @@ import {hasAuthenticatedSession} from '../utils/readerUpgrade';
 
 interface NotificationsPageProps {
   onNavigate: (page: any, data?: any) => void;
+  userRole?: 'user' | 'author' | 'admin';
 }
 
 type UiNotification = {
@@ -19,6 +20,12 @@ type UiNotification = {
   timeLabel: string;
   unread: boolean;
   actionUrl?: string;
+};
+
+type AdminAuthorRequest = UiNotification & {
+  authorId: string;
+  email: string;
+  status: string;
 };
 
 const LOCAL_NOTIFICATIONS_KEY = 'local-notifications';
@@ -145,13 +152,39 @@ function resolveInternalPage(actionUrl: string): string | null {
   return null;
 }
 
-export default function NotificationsPage({ onNavigate }: NotificationsPageProps) {
+function normalizeAdminAuthorRequest(raw: any): AdminAuthorRequest | null {
+  const base = normalizeNotification(raw);
+  if (!base) return null;
+
+  const type = String(raw?.type || '').trim().toLowerCase();
+  if (type !== 'author.pending_approval') return null;
+
+  const payload = raw?.payload && typeof raw.payload === 'object' ? raw.payload : {};
+  const authorId = pickString(payload?.author_id, payload?.authorId, raw?.author_id, raw?.authorId, raw?.id);
+  const email = pickString(payload?.email, raw?.email);
+  const status = pickString(payload?.status, raw?.status, 'in_review');
+
+  if (!authorId) return null;
+
+  return {
+    ...base,
+    authorId,
+    email,
+    status,
+  };
+}
+
+export default function NotificationsPage({ onNavigate, userRole }: NotificationsPageProps) {
   const [notifications, setNotifications] = React.useState<UiNotification[]>([]);
+  const [adminAuthorRequests, setAdminAuthorRequests] = React.useState<AdminAuthorRequest[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoadingAdminRequests, setIsLoadingAdminRequests] = React.useState(false);
   const [error, setError] = React.useState('');
   const [isMarkingAll, setIsMarkingAll] = React.useState(false);
+  const [reviewingAuthorId, setReviewingAuthorId] = React.useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState<number | null>(null);
   const didAutoMarkRef = React.useRef(false);
+  const isAdmin = userRole === 'admin';
 
   React.useEffect(() => {
     const onLocalNotification = (event: Event) => {
@@ -237,10 +270,46 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
     }
   }, []);
 
+  const loadAdminAuthorRequests = React.useCallback(async () => {
+    if (!isAdmin) {
+      setAdminAuthorRequests([]);
+      return;
+    }
+
+    setIsLoadingAdminRequests(true);
+    try {
+      const perPage = 50;
+      const all: AdminAuthorRequest[] = [];
+      let page = 1;
+      let lastPage = 1;
+
+      do {
+        const payload: any = await notificationService.listAdmin({page, per_page: perPage});
+        const list = extractList(payload);
+        const items = list.map(normalizeAdminAuthorRequest).filter(Boolean) as AdminAuthorRequest[];
+        all.push(...items);
+
+        const meta = extractMeta(payload);
+        const nextLastPage = Number(meta?.last_page ?? meta?.lastPage ?? 1) || 1;
+        lastPage = Math.max(1, nextLastPage);
+        page += 1;
+      } while (page <= lastPage && page <= 20);
+
+      const byId = new Map<string, AdminAuthorRequest>();
+      for (const item of all) byId.set(item.id, item);
+      setAdminAuthorRequests(Array.from(byId.values()));
+    } catch {
+      setAdminAuthorRequests([]);
+    } finally {
+      setIsLoadingAdminRequests(false);
+    }
+  }, [isAdmin]);
+
   React.useEffect(() => {
     let alive = true;
     void (async () => {
       await loadNotifications();
+      await loadAdminAuthorRequests();
       if (!alive) return;
     })();
 
@@ -253,6 +322,14 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
       window.clearInterval(intervalId);
     };
   }, [loadNotifications]);
+
+  React.useEffect(() => {
+    if (!isAdmin) {
+      setAdminAuthorRequests([]);
+      return;
+    }
+    void loadAdminAuthorRequests();
+  }, [isAdmin, loadAdminAuthorRequests]);
 
   const markAllRead = async () => {
     if (isMarkingAll) return;
@@ -389,6 +466,32 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
     [markRead, onNavigate],
   );
 
+  const handleAdminAuthorAction = React.useCallback(
+    async (request: AdminAuthorRequest, action: 'approve' | 'reject') => {
+      const target = request.authorId;
+      if (!target) return;
+      setReviewingAuthorId(target);
+      try {
+        if (action === 'approve') {
+          await authService.approveAuthor(target);
+        } else {
+          await authService.rejectAuthor(target);
+        }
+        await Promise.all([loadAdminAuthorRequests(), loadNotifications()]);
+      } catch (e: any) {
+        const status = Number(e?.status);
+        if (status === 401 || status === 403) {
+          setError('');
+        } else {
+          setError(e?.data?.message || e?.message || `Unable to ${action} author request.`);
+        }
+      } finally {
+        setReviewingAuthorId('');
+      }
+    },
+    [loadAdminAuthorRequests, loadNotifications],
+  );
+
   return (
     <div className="mx-auto max-w-4xl px-6 lg:px-20 py-10 space-y-10">
       <div className="flex items-center justify-between">
@@ -416,6 +519,90 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
         <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           <span>{error}</span>
         </div>
+      ) : null}
+
+      {isAdmin ? (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-text">Author requests</h2>
+              <p className="text-sm text-text-muted">Pending author applications pulled from the admin notification feed.</p>
+            </div>
+            {isLoadingAdminRequests ? (
+              <span className="text-xs font-bold uppercase tracking-widest text-text-muted">Loading...</span>
+            ) : (
+              <span className="text-xs font-bold uppercase tracking-widest text-primary">
+                {adminAuthorRequests.length} pending
+              </span>
+            )}
+          </div>
+
+          {adminAuthorRequests.length === 0 && !isLoadingAdminRequests ? (
+            <div className="rounded-3xl border border-border bg-surface p-6 text-sm text-text-muted">
+              No pending author requests.
+            </div>
+          ) : null}
+
+          <div className="space-y-4">
+            {adminAuthorRequests.map((request, index) => (
+              <motion.div
+                key={request.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/10 via-surface to-surface p-6 shadow-sm"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.22em] text-primary">
+                        New author request pending approval
+                      </span>
+                      <span className="rounded-full border border-border bg-bg px-3 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-text-muted">
+                        {request.status || 'in_review'}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-text">{request.title}</h3>
+                    <p className="text-sm text-text-muted">{request.message}</p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 text-xs">
+                      <div className="rounded-2xl border border-border bg-bg px-3 py-2">
+                        <span className="block font-bold text-text-muted uppercase tracking-widest">Author ID</span>
+                        <span className="block mt-1 font-semibold text-text">{request.authorId}</span>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-bg px-3 py-2">
+                        <span className="block font-bold text-text-muted uppercase tracking-widest">Email</span>
+                        <span className="block mt-1 font-semibold text-text break-all">{request.email || 'Unknown'}</span>
+                      </div>
+                      <div className="rounded-2xl border border-border bg-bg px-3 py-2">
+                        <span className="block font-bold text-text-muted uppercase tracking-widest">Requested</span>
+                        <span className="block mt-1 font-semibold text-text">{request.timeLabel || 'just now'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={() => void handleAdminAuthorAction(request, 'reject')}
+                      disabled={reviewingAuthorId === request.authorId}
+                      className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-300 transition-colors hover:bg-red-500/15 disabled:opacity-60"
+                    >
+                      {reviewingAuthorId === request.authorId ? 'Processing...' : 'Reject'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleAdminAuthorAction(request, 'approve')}
+                      disabled={reviewingAuthorId === request.authorId}
+                      className="rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      {reviewingAuthorId === request.authorId ? 'Processing...' : 'Approve'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </section>
       ) : null}
 
       <div className="space-y-4">

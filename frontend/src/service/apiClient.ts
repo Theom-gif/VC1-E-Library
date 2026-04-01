@@ -18,8 +18,12 @@ export class ApiClientError extends Error {
 const PRODUCTION_HOSTNAME = 'elibrary.pncproject.site';
 const PRODUCTION_BASE_URL = `https://${PRODUCTION_HOSTNAME}`;
 const VITE_ENV = (import.meta as any)?.env || {};
-const HAS_EXPLICIT_API_BASE_URL =
-  VITE_ENV?.VITE_API_URL !== undefined || VITE_ENV?.VITE_API_BASE_URL !== undefined;
+
+function hasNonEmptyValue(value: unknown): boolean {
+  return String(value ?? '').trim().length > 0;
+}
+
+const HAS_EXPLICIT_API_BASE_URL = hasNonEmptyValue(VITE_ENV?.VITE_API_URL) || hasNonEmptyValue(VITE_ENV?.VITE_API_BASE_URL);
 
 function defaultBaseUrl(): string {
   const viteEnv = (import.meta as any)?.env;
@@ -58,8 +62,8 @@ function defaultBaseUrl(): string {
 }
 
 const API_BASE_URL = String(
-  import.meta.env.VITE_API_URL ||
-    import.meta.env.VITE_API_BASE_URL ||
+  String(import.meta.env.VITE_API_URL || '').trim() ||
+    String(import.meta.env.VITE_API_BASE_URL || '').trim() ||
     defaultBaseUrl(),
 ).replace(/\/+$/, '');
 

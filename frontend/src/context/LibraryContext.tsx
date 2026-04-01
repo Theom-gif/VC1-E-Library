@@ -15,6 +15,9 @@ type LibraryState = {
 
 const LibraryContext = createContext<LibraryState | null>(null);
 
+const ALLOW_MOCK_LIBRARY =
+  String(import.meta.env.VITE_ALLOW_MOCK_LIBRARY || '').trim().toLowerCase() === 'true';
+
 function pickErrorMessage(error: any): string {
   const message = error?.data?.message || error?.message || 'Unable to load library data.';
   const method = String(error?.method || '').trim();
@@ -40,17 +43,24 @@ export function LibraryProvider({children}: {children: React.ReactNode}) {
       setNewArrivals(response.items.slice(0, 20));
       setSource('api');
     } catch (requestError: any) {
-      try {
-        const mock = await import('../data/mockBooks');
-        setBooks(mock.MOCK_BOOKS);
-        setNewArrivals([...mock.NEW_ARRIVALS, ...mock.MOCK_BOOKS].slice(0, 20));
-        setSource('mock');
-        setError(null);
-      } catch {
-        setSource('mock');
-        setError(pickErrorMessage(requestError));
+      if (ALLOW_MOCK_LIBRARY) {
+        try {
+          const mock = await import('../data/mockBooks');
+          setBooks(mock.MOCK_BOOKS);
+          setNewArrivals([...mock.NEW_ARRIVALS, ...mock.MOCK_BOOKS].slice(0, 20));
+          setSource('mock');
+          setError(null);
+          return;
+        } catch {
+          // Fall through to the backend error below.
+        }
       }
-    } finally {
+      setBooks([]);
+      setNewArrivals([]);
+      setSource('api');
+      setError(pickErrorMessage(requestError));
+    }
+    finally {
       setIsLoading(false);
     }
   }, []);
