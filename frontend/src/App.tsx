@@ -363,17 +363,24 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
-    const shouldLockScroll = Boolean(showAccessPrompt || showReauthPrompt);
+    const shouldLockScroll = Boolean(showAccessPrompt || showReauthPrompt || showHomeAuthOverlay);
     if (!shouldLockScroll) return;
 
     const body = document.body;
     const html = document.documentElement;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
     const previousOverflow = body.style.overflow;
+    const previousPosition = body.style.position;
+    const previousTop = body.style.top;
+    const previousWidth = body.style.width;
     const previousHtmlOverflow = html.style.overflow;
     const previousPaddingRight = body.style.paddingRight;
 
     const scrollbarWidth = window.innerWidth - html.clientWidth;
     body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
     html.style.overflow = 'hidden';
     if (scrollbarWidth > 0) {
       body.style.paddingRight = `${scrollbarWidth}px`;
@@ -381,10 +388,14 @@ export default function App({ authUser, onLogout, onLogin, onRegister }: AppProp
 
     return () => {
       body.style.overflow = previousOverflow;
+      body.style.position = previousPosition;
+      body.style.top = previousTop;
+      body.style.width = previousWidth;
       html.style.overflow = previousHtmlOverflow;
       body.style.paddingRight = previousPaddingRight;
+      window.scrollTo(0, scrollY);
     };
-  }, [showAccessPrompt, showReauthPrompt]);
+  }, [showAccessPrompt, showHomeAuthOverlay, showReauthPrompt]);
 
   React.useEffect(() => {
     setUser((prev) => ({
