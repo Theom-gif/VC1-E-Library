@@ -141,6 +141,12 @@ function asAbsoluteAssetUrl(value: unknown): string {
   return `${base}/storage/${normalized}`;
 }
 
+function fallbackAuthorPhoto(seed: string, size = 100): string {
+  const raw = String(seed || '').trim() || 'author';
+  const safeSize = Math.max(40, Math.min(256, Math.round(Number(size) || 100)));
+  return `https://i.pravatar.cc/${safeSize}?u=${encodeURIComponent(raw.toLowerCase())}`;
+}
+
 function normalizeRoleName(raw: any): string {
   const userRoleName =
     raw?.user && typeof raw.user === 'object'
@@ -219,7 +225,7 @@ function normalizeAuthor(raw: any, index: number): AuthorType | null {
           user?.photo_url ??
           user?.image,
       ) ||
-      undefined,
+      fallbackAuthorPhoto(name, 100),
     followers: followersCount,
     followers_count: followersCount,
     is_following: isFollowing,

@@ -249,8 +249,14 @@ function fallbackProfilePhoto(seed: string, size = 100): string {
   <text x="50%" y="52%" text-anchor="middle" dominant-baseline="middle"
     font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
     font-size="${Math.round(safeSize * 0.38)}" font-weight="800" fill="rgba(229,231,235,0.92)">${escapeHtml(initial)}</text>
-</svg>`;
+  </svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function fallbackAuthorPhoto(seed: string, size = 100): string {
+  const raw = String(seed || '').trim() || 'author';
+  const safeSize = Math.max(40, Math.min(256, Math.round(Number(size) || 100)));
+  return `https://i.pravatar.cc/${safeSize}?u=${encodeURIComponent(raw.toLowerCase())}`;
 }
 
 function stableHash(value: string): string {
@@ -651,7 +657,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
     void loadAuthor
       .then((author) => {
         if (!alive) return;
-        const next = String(author?.photo || '').trim() || fallbackProfilePhoto(authorName, 100);
+        const next = String(author?.photo || '').trim() || fallbackAuthorPhoto(authorName, 100);
         authorPhotoCache.set(cacheKey, next);
         setAuthorPhoto(next);
         setAuthorInfo(
@@ -673,7 +679,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
       })
       .catch(() => {
         if (!alive) return;
-        const next = fallbackProfilePhoto(authorName, 100);
+        const next = fallbackAuthorPhoto(authorName, 100);
         authorPhotoCache.set(cacheKey, next);
         setAuthorPhoto(next);
         setAuthorInfo((prev) => prev || {name: authorName, photo: next});
@@ -1568,7 +1574,7 @@ export default function BookDetails({ book, onNavigate }: BookDetailsProps) {
               >
                 <div className="size-10 rounded-full bg-surface border border-border overflow-hidden group-hover/author:border-primary transition-colors">
                   <img
-                    src={authorPhoto || fallbackProfilePhoto(currentBook.author, 100)}
+                    src={authorPhoto || fallbackAuthorPhoto(currentBook.author, 100)}
                     alt={currentBook.author}
                     className="w-full h-full object-cover"
                     loading="lazy"

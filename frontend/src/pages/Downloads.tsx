@@ -33,28 +33,12 @@ export default function Downloads({onNavigate}: DownloadsProps) {
   const {active, downloadedBooks, storageUsed, pause, resume, cancel, remove, openOffline} = useDownloads();
   const hasActiveDownloads = active.length > 0;
 
-  const totalCapacityBytes = 10 * 1024 * 1024 * 1024;
-  const storageLabel = `${formatBytes(storageUsed)} / 10 GB`;
-  const storagePct = totalCapacityBytes ? Math.min(100, Math.round((storageUsed / totalCapacityBytes) * 100)) : 0;
-
   return (
     <div className="mx-auto max-w-7xl px-6 lg:px-20 py-10 space-y-10">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold text-text">Downloads</h1>
           <p className="text-sm text-text-muted">Manage your offline library and active downloads</p>
-        </div>
-        <div className="flex items-center gap-4 p-4 rounded-2xl bg-surface border border-border">
-          <div className="size-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-            <Icons.Download className="size-5" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-text-muted uppercase tracking-wider">Storage Used</p>
-            <p className="text-sm font-bold text-text">{storageLabel}</p>
-          </div>
-          <div className="w-24 h-2 bg-border rounded-full overflow-hidden">
-            <div className="h-full bg-primary" style={{width: `${storagePct}%`}} />
-          </div>
         </div>
       </div>
 
