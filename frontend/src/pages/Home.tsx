@@ -104,7 +104,7 @@ function readPendingAuthorApplication(): PendingAuthorApplication | null {
   }
 }
 
-function writePendingAuthorApplication(form: AuthorApplicationForm) {
+function writePendingAuthorApplication(form: Pick<AuthorApplicationForm, 'firstname' | 'lastname' | 'email' | 'bio'>) {
   const payload: PendingAuthorApplication = {
     firstname: form.firstname.trim(),
     lastname: form.lastname.trim(),
@@ -121,6 +121,14 @@ function writePendingAuthorApplication(form: AuthorApplicationForm) {
   }
 
   return payload;
+}
+
+function clearPendingAuthorApplication() {
+  try {
+    localStorage.removeItem(AUTHOR_APPLICATION_STORAGE_KEY);
+  } catch {
+    // ignore storage issues
+  }
 }
 
 export default function Home({
@@ -228,6 +236,7 @@ export default function Home({
   const [showAuthorConfirmPassword, setShowAuthorConfirmPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const hasPendingAuthorApplication = Boolean(pendingAuthorApplication);
 
   React.useEffect(() => {
     if (canShowAuthOverlay) {
@@ -359,7 +368,6 @@ export default function Home({
         firstname,
         lastname,
         email,
-        password,
         bio,
       });
 
@@ -418,8 +426,8 @@ export default function Home({
 
       {canShowAuthOverlay && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-slate-950/55 px-4 py-6 backdrop-blur-xl">
-            <div className="my-auto mx-auto w-full max-w-4xl overflow-hidden rounded-[2rem] border border-border/70 bg-bg/95 p-6 shadow-[0_30px_100px_rgba(15,23,42,0.25)] ring-1 ring-white/10 md:p-8">
+          <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto no-scrollbar bg-slate-950/55 px-4 py-6 backdrop-blur-xl">
+            <div className="my-auto mx-auto w-full max-w-4xl max-h-[calc(100vh-3rem)] overflow-y-auto no-scrollbar rounded-[2rem] border border-border/70 bg-bg/95 p-6 shadow-[0_30px_100px_rgba(15,23,42,0.25)] ring-1 ring-white/10 md:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-3">
                   <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.22em] text-primary">
@@ -453,8 +461,18 @@ export default function Home({
                 <button
                   type="button"
                   onClick={() => {
+                    clearPendingAuthorApplication();
+                    setPendingAuthorApplication(null);
                     setAuthMode('author');
                     setAuthError('');
+                    setAuthorApplicationForm({
+                      firstname: '',
+                      lastname: '',
+                      email: '',
+                      password: '',
+                      password_confirmation: '',
+                      bio: '',
+                    });
                   }}
                   className={`group relative inline-flex items-center gap-3 overflow-hidden rounded-full border px-4 py-2.5 text-left transition-all ${
                     authMode === 'author'
@@ -467,7 +485,7 @@ export default function Home({
                   </span>
                   <span className="flex flex-col leading-tight">
                     <span className="text-[13px] font-extrabold tracking-wide">
-                      Become an Author
+                      {hasPendingAuthorApplication ? 'Apply with another email' : 'Become an Author'}
                     </span>
                     <span className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${authMode === 'author' ? 'text-white/80' : 'text-primary/70'}`}>
                       Submit for review
@@ -691,15 +709,37 @@ export default function Home({
                           <span className="font-semibold text-text">Status:</span> Waiting for admin approval
                         </p>
                       </div>
-                      {onCloseAuthOverlay ? (
+                      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                         <button
                           type="button"
-                          onClick={onCloseAuthOverlay}
-                          className="mt-5 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-[#0f172a] transition-colors hover:bg-emerald-300"
+                          onClick={() => {
+                            clearPendingAuthorApplication();
+                            setPendingAuthorApplication(null);
+                            setAuthMode('author');
+                            setAuthError('');
+                            setAuthorApplicationForm({
+                              firstname: '',
+                              lastname: '',
+                              email: '',
+                              password: '',
+                              password_confirmation: '',
+                              bio: '',
+                            });
+                          }}
+                          className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-400"
                         >
-                          Close
+                          Register with another email
                         </button>
-                      ) : null}
+                        {onCloseAuthOverlay ? (
+                          <button
+                            type="button"
+                            onClick={onCloseAuthOverlay}
+                            className="rounded-xl border border-border bg-bg px-5 py-3 text-sm font-bold text-text-muted transition-colors hover:text-text"
+                          >
+                            Close
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -707,9 +747,11 @@ export default function Home({
                 <form onSubmit={handleAuthorApplicationSubmit} className="mt-6 grid gap-4 rounded-3xl border border-border/60 bg-bg/80 p-5 shadow-sm md:p-6">
                   <div className="flex items-start justify-between gap-3 rounded-2xl border border-border/60 bg-surface/70 px-4 py-3">
                     <div>
-                      <p className="text-sm font-bold text-text">Author application</p>
+                      <p className="text-sm font-bold text-text">Want to become an author?</p>
                       <p className="mt-1 text-xs text-text-muted">
-                        Fill in your details and we’ll keep the request in a pending state until admin approval.
+                        Fill in this form to request author access. Your application will be sent to the admin team for review.
+                        Please provide accurate information about yourself and why you want to publish books on this platform.
+                        After review, you will receive a result telling you whether your request was approved or rejected.
                       </p>
                     </div>
                     <button
@@ -838,10 +880,10 @@ export default function Home({
                     disabled={isSubmitting}
                     className="rounded-2xl bg-primary px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
-                    {isSubmitting ? 'Submitting application...' : 'Submit Author Application'}
+                    {isSubmitting ? 'Submitting application...' : 'Request Author Access'}
                   </button>
                   <p className="text-xs text-text-muted">
-                    By submitting, your profile will be marked as pending until an admin reviews and approves your author request.
+                    Submit your information for admin review. We’ll notify you when your request is approved or rejected.
                   </p>
                 </form>
               )

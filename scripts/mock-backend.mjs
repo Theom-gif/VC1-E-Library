@@ -311,8 +311,65 @@ export function createMockBackendServer({logger = console} = {}) {
     return users.get(key);
   }
 
+  function resolveUserByIdentifier(identifier) {
+    const raw = pickString(identifier);
+    if (!raw) return null;
+
+    const normalized = raw.toLowerCase();
+    if (users.has(raw)) return users.get(raw);
+
+    const byEmailId = userIdByEmail.get(normalized);
+    if (byEmailId && users.has(String(byEmailId))) {
+      return users.get(String(byEmailId));
+    }
+
+    for (const user of users.values()) {
+      const userId = pickString(user?.id);
+      const email = normalizeEmail(user?.email);
+      const fullName = `${pickString(user?.firstname)} ${pickString(user?.lastname)}`.trim().toLowerCase();
+      const displayName = pickString(user?.name).trim().toLowerCase();
+      if (
+        userId === raw ||
+        userId.toLowerCase() === normalized ||
+        email === normalized ||
+        fullName === normalized ||
+        displayName === normalized
+      ) {
+        return user;
+      }
+    }
+
+    return null;
+  }
+
+  function normalizeApprovalStatus(user) {
+    const raw = String(user?.approval_status ?? user?.status ?? 'approved').trim().toLowerCase();
+    if (!raw || raw === 'approved' || raw === 'active') return 'approved';
+    if (raw === 'pending' || raw === 'rejected') return raw;
+    return raw;
+  }
+
+  function buildPublicUser(user) {
+    if (!user) return null;
+    const approval_status = normalizeApprovalStatus(user);
+    return {
+      ...user,
+      approval_status,
+      status: approval_status,
+    };
+  }
+
   function normalizeEmail(value) {
     return pickString(value).trim().toLowerCase();
+  }
+
+  function buildDisplayName({name, firstname, lastname, fallbackFirst = 'Mock', fallbackLast = 'User'} = {}) {
+    const explicitName = pickString(name);
+    if (explicitName) return explicitName;
+
+    const first = pickString(firstname, fallbackFirst);
+    const last = pickString(lastname, fallbackLast);
+    return `${first} ${last}`.trim();
   }
 
   function issueTokenForUserId(userId) {
@@ -371,6 +428,33 @@ export function createMockBackendServer({logger = console} = {}) {
     };
     notifications.push(notification);
     return notification;
+  }
+
+  function notifyAdminsAboutAuthorApplication(user) {
+    const adminIds = Array.from(users.values())
+      .filter((candidate) => pickString(candidate?.role).toLowerCase() === 'admin')
+      .map((candidate) => String(candidate.id));
+
+    if (!adminIds.length) return [];
+
+    const fullName = `${pickString(user?.firstname)} ${pickString(user?.lastname)}`.trim() || pickString(user?.name, 'Unknown Author');
+    const email = pickString(user?.email, 'unknown@example.com');
+    const applicationIdRaw = pickString(user?.id);
+    const applicationId = Number.isFinite(Number(applicationIdRaw)) ? Number(applicationIdRaw) : applicationIdRaw;
+
+    return adminIds.map((id) =>
+      createNotification(id, {
+        type: 'author.pending_approval',
+        title: 'New author request pending approval',
+        message: `${fullName} requested to become an author.`,
+        audience: 'admin',
+        payload: {
+          author_id: applicationId,
+          email,
+          status: 'in_review',
+        },
+      }),
+    );
   }
 
   function createAchievementUnlockNotifications(userId, keys) {
@@ -760,6 +844,79 @@ export function createMockBackendServer({logger = console} = {}) {
       return;
     }
 
+    const approveAuthorMatch = pathname.match(/^\/api\/admin\/approve-authors\/([^/]+)$/);
+    if (approveAuthorMatch && (method === 'POST' || method === 'PATCH')) {
+      const authUser = requireAuth(req, res);
+      if (!authUser) return;
+      if (!isAdmin(authUser)) {
+        sendJson(res, 403, {message: 'Forbidden'});
+        return;
+      }
+
+      const target = resolveUserByIdentifier(decodeURIComponent(approveAuthorMatch[1]));
+      if (!target) {
+        sendJson(res, 404, {message: 'Author not found'});
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const updated = {
+        ...target,
+        role: 'author',
+        approval_status: 'approved',
+        status: 'approved',
+        approved_at: now,
+        reviewed_at: now,
+      };
+      users.set(String(updated.id), updated);
+      if (updated.email) {
+        userIdByEmail.set(normalizeEmail(updated.email), String(updated.id));
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Author approved successfully.',
+        data: buildPublicUser(updated),
+      });
+      return;
+    }
+
+    const rejectAuthorMatch = pathname.match(/^\/api\/admin\/reject-authors\/([^/]+)$/);
+    if (rejectAuthorMatch && (method === 'POST' || method === 'PATCH')) {
+      const authUser = requireAuth(req, res);
+      if (!authUser) return;
+      if (!isAdmin(authUser)) {
+        sendJson(res, 403, {message: 'Forbidden'});
+        return;
+      }
+
+      const target = resolveUserByIdentifier(decodeURIComponent(rejectAuthorMatch[1]));
+      if (!target) {
+        sendJson(res, 404, {message: 'Author not found'});
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const updated = {
+        ...target,
+        approval_status: 'rejected',
+        status: 'rejected',
+        rejected_at: now,
+        reviewed_at: now,
+      };
+      users.set(String(updated.id), updated);
+      if (updated.email) {
+        userIdByEmail.set(normalizeEmail(updated.email), String(updated.id));
+      }
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Author rejected successfully.',
+        data: buildPublicUser(updated),
+      });
+      return;
+    }
+
     // Auth (mock, multi-user)
     if (method === 'POST' && pathname === '/api/auth/register') {
       const body = (await readJsonBody(req)) || {};
@@ -767,6 +924,7 @@ export function createMockBackendServer({logger = console} = {}) {
       const firstname = pickString(body.firstname, 'Mock');
       const lastname = pickString(body.lastname, 'User');
       const role = pickString(body.role, 'user');
+      const name = buildDisplayName({name: body.name, firstname, lastname});
       const password = pickString(body.password);
       const passwordConfirmation = pickString(body.password_confirmation, body.confirm_password);
 
@@ -786,15 +944,94 @@ export function createMockBackendServer({logger = console} = {}) {
       }
 
       const id = nextUserId++;
-      const user = {id, firstname, lastname, email, role};
+      const isAuthorRole = pickString(role).toLowerCase() === 'author';
+      const approvalStatus = isAuthorRole ? 'pending' : 'approved';
+      const user = {
+        id,
+        firstname,
+        lastname,
+        email,
+        role,
+        name,
+        approval_status: approvalStatus,
+        status: approvalStatus,
+        submitted_at: isAuthorRole ? new Date().toISOString() : undefined,
+      };
       users.set(String(id), user);
       userIdByEmail.set(email, String(id));
       passwordByUserId.set(String(id), password);
+
+      if (isAuthorRole) {
+        notifyAdminsAboutAuthorApplication(user);
+        sendJson(res, 200, {
+          success: true,
+          message: 'Author application submitted successfully.',
+          data: buildPublicUser(user),
+        });
+        return;
+      }
+
       const token = issueTokenForUserId(id);
 
       sendJson(res, 200, {
         token,
-        user,
+        user: buildPublicUser(user),
+      });
+      return;
+    }
+
+    if (
+      method === 'POST' &&
+      (pathname === '/api/auth/author_registration' ||
+        pathname === '/api/auth/author-registration' ||
+        pathname === '/api/auth/author_register')
+    ) {
+      const body = (await readJsonBody(req)) || {};
+      const email = normalizeEmail(body.email);
+      const firstname = pickString(body.firstname, 'Mock');
+      const lastname = pickString(body.lastname, 'Author');
+      const name = buildDisplayName({name: body.name, firstname, lastname, fallbackLast: 'Author'});
+      const password = pickString(body.password);
+      const passwordConfirmation = pickString(body.password_confirmation, body.confirm_password);
+      const bio = pickString(body.bio);
+
+      const errors = {};
+      if (!email) errors.email = ['The email field is required.'];
+      if (!password) errors.password = ['The password field is required.'];
+      if (passwordConfirmation && password && passwordConfirmation !== password) {
+        errors.password_confirmation = ['The password confirmation does not match.'];
+      }
+      if (Object.keys(errors).length) {
+        sendJson(res, 422, {message: 'Validation error', errors});
+        return;
+      }
+      if (userIdByEmail.has(email)) {
+        sendJson(res, 422, {message: 'Validation error', errors: {email: ['The email has already been taken.']}});
+        return;
+      }
+
+      const id = nextUserId++;
+      const user = {
+        id,
+        firstname,
+        lastname,
+        email,
+        role: 'author',
+        name,
+        bio,
+        approval_status: 'pending',
+        status: 'pending',
+        submitted_at: new Date().toISOString(),
+      };
+      users.set(String(id), user);
+      userIdByEmail.set(email, String(id));
+      passwordByUserId.set(String(id), password);
+
+      notifyAdminsAboutAuthorApplication(user);
+      sendJson(res, 200, {
+        success: true,
+        message: 'Author application submitted successfully.',
+        data: buildPublicUser(user),
       });
       return;
     }
@@ -833,8 +1070,20 @@ export function createMockBackendServer({logger = console} = {}) {
         return;
       }
 
+      const approvalStatus = normalizeApprovalStatus(user);
+      if (pickString(user.role).toLowerCase() === 'author') {
+        if (approvalStatus === 'pending') {
+          sendJson(res, 403, {message: 'Author account is pending approval.'});
+          return;
+        }
+        if (approvalStatus === 'rejected') {
+          sendJson(res, 403, {message: 'Author application was rejected.'});
+          return;
+        }
+      }
+
       const token = issueTokenForUserId(userId);
-      sendJson(res, 200, {token, user});
+      sendJson(res, 200, {token, user: buildPublicUser(user)});
       return;
     }
 
@@ -848,7 +1097,7 @@ export function createMockBackendServer({logger = console} = {}) {
     if (method === 'GET' && (pathname === '/api/me' || pathname === '/me')) {
       const user = requireAuth(req, res);
       if (!user) return;
-      sendJson(res, 200, user);
+      sendJson(res, 200, buildPublicUser(user));
       return;
     }
 
@@ -1518,6 +1767,110 @@ async function runSelfTest() {
   const adminListPayload = await adminListRes.json();
   if (!adminListRes.ok) throw new Error(`Self-test failed (/api/admin/notifications): HTTP ${adminListRes.status}`);
   if (!Array.isArray(adminListPayload?.data)) throw new Error('Self-test failed: admin notifications data should be an array');
+
+  const authorRegisterRes = await fetch(`http://127.0.0.1:${port}/api/auth/author_registration`, {
+    method: 'POST',
+    headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      email: 'author1@example.com',
+      password: 'secret',
+      password_confirmation: 'secret',
+      firstname: 'Author',
+      lastname: 'One',
+      bio: 'This is a detailed author bio for the mock backend self-test.',
+    }),
+  });
+  const authorRegisterPayload = await authorRegisterRes.json();
+  if (!authorRegisterRes.ok) throw new Error(`Self-test failed (/api/auth/author_registration): HTTP ${authorRegisterRes.status}`);
+  const pendingAuthorId = pickString(authorRegisterPayload?.data?.id);
+  if (!pendingAuthorId) throw new Error('Self-test failed: missing author application id');
+  if (pickString(authorRegisterPayload?.data?.approval_status).toLowerCase() !== 'pending') {
+    throw new Error('Self-test failed: author application should start pending');
+  }
+
+  const adminNotificationsAfterAuthorRes = await fetch(`http://127.0.0.1:${port}/api/admin/notifications`, {
+    headers: adminAuthHeaders,
+  });
+  const adminNotificationsAfterAuthorPayload = await adminNotificationsAfterAuthorRes.json();
+  if (!adminNotificationsAfterAuthorRes.ok) {
+    throw new Error(`Self-test failed (/api/admin/notifications after author registration): HTTP ${adminNotificationsAfterAuthorRes.status}`);
+  }
+  const authorNotification = Array.isArray(adminNotificationsAfterAuthorPayload?.data)
+    ? adminNotificationsAfterAuthorPayload.data.find(
+        (item) =>
+          pickString(item?.type).toLowerCase() === 'author.pending_approval' &&
+          pickString(item?.title).toLowerCase() === 'new author request pending approval' &&
+          String(item?.message || '').toLowerCase().includes('requested to become an author') &&
+          Number(item?.payload?.author_id) === Number(pendingAuthorId) &&
+          pickString(item?.payload?.email).toLowerCase() === 'author1@example.com' &&
+          pickString(item?.payload?.status).toLowerCase() === 'in_review',
+      )
+    : null;
+  if (!authorNotification) {
+    throw new Error('Self-test failed: admin should receive an author application notification');
+  }
+
+  const pendingAuthorLoginRes = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+    method: 'POST',
+    headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
+    body: JSON.stringify({email: 'author1@example.com', password: 'secret'}),
+  });
+  if (pendingAuthorLoginRes.status !== 403) {
+    throw new Error(`Self-test failed: pending author login should be rejected, got HTTP ${pendingAuthorLoginRes.status}`);
+  }
+
+  const approveAuthorRes = await fetch(`http://127.0.0.1:${port}/api/admin/approve-authors/${encodeURIComponent(pendingAuthorId)}`, {
+    method: 'POST',
+    headers: adminAuthHeaders,
+  });
+  const approveAuthorPayload = await approveAuthorRes.json();
+  if (!approveAuthorRes.ok) throw new Error(`Self-test failed (/api/admin/approve-authors): HTTP ${approveAuthorRes.status}`);
+  if (pickString(approveAuthorPayload?.data?.approval_status).toLowerCase() !== 'approved') {
+    throw new Error('Self-test failed: author should be approved');
+  }
+
+  const approvedAuthorLoginRes = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+    method: 'POST',
+    headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
+    body: JSON.stringify({email: 'author1@example.com', password: 'secret'}),
+  });
+  const approvedAuthorLoginPayload = await approvedAuthorLoginRes.json();
+  if (!approvedAuthorLoginRes.ok) throw new Error(`Self-test failed (approved author login): HTTP ${approvedAuthorLoginRes.status}`);
+  if (!pickString(approvedAuthorLoginPayload?.token)) throw new Error('Self-test failed: approved author should receive a token');
+
+  const rejectedAuthorRes = await fetch(`http://127.0.0.1:${port}/api/auth/author_registration`, {
+    method: 'POST',
+    headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      email: 'author2@example.com',
+      password: 'secret',
+      password_confirmation: 'secret',
+      firstname: 'Author',
+      lastname: 'Two',
+      bio: 'Another detailed author bio for the rejection path.',
+    }),
+  });
+  const rejectedAuthorPayload = await rejectedAuthorRes.json();
+  if (!rejectedAuthorRes.ok) throw new Error(`Self-test failed (/api/auth/author_registration second): HTTP ${rejectedAuthorRes.status}`);
+  const rejectedAuthorId = pickString(rejectedAuthorPayload?.data?.id);
+  const rejectAuthorRes = await fetch(`http://127.0.0.1:${port}/api/admin/reject-authors/${encodeURIComponent(rejectedAuthorId)}`, {
+    method: 'PATCH',
+    headers: adminAuthHeaders,
+  });
+  const rejectAuthorPayload = await rejectAuthorRes.json();
+  if (!rejectAuthorRes.ok) throw new Error(`Self-test failed (/api/admin/reject-authors): HTTP ${rejectAuthorRes.status}`);
+  if (pickString(rejectAuthorPayload?.data?.approval_status).toLowerCase() !== 'rejected') {
+    throw new Error('Self-test failed: author should be rejected');
+  }
+
+  const rejectedAuthorLoginRes = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+    method: 'POST',
+    headers: {Accept: 'application/json', 'Content-Type': 'application/json'},
+    body: JSON.stringify({email: 'author2@example.com', password: 'secret'}),
+  });
+  if (rejectedAuthorLoginRes.status !== 403) {
+    throw new Error(`Self-test failed: rejected author login should be rejected, got HTTP ${rejectedAuthorLoginRes.status}`);
+  }
 
   server.close();
   process.stdout.write('mock-backend self-test: ok\n');
